@@ -1,0 +1,10 @@
+numpy>=1.21.0
+PySide6>=6.8.0
+pyqtgraph>=0.13.0
+psutil>=5.9.0
+configparser>=5.3.0
+pyserial>=3.5
+ctypes; platform_system=="Windows"
+libusb1>=2.0.0; platform_system!="Windows"
+pyinstaller>=6.0.0
+pillow>=10.0.0 

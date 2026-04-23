@@ -1,0 +1,36 @@
+---
+description: NVMagUI incremental development safety guide
+alwaysApply: true
+---
+
+# NVMagUI Iteration Guide
+
+## Scope and compatibility
+- Keep `Exp_UI.py` as the stable entrypoint unless explicitly migrating startup flow.
+- Do not hardcode machine-specific paths; all runtime paths must come from `config/*.ini`.
+- New config keys must be backward-compatible: provide defaults and preserve old key behavior.
+
+## State and concurrency
+- Any feature that starts/stops device work must integrate with `DevStateManager` and emit clear state transitions.
+- Do not block UI thread with device I/O or long loops; use `QThread`, signals, or `QTimer`.
+- If adding periodic tasks, always include explicit start/stop lifecycle and cleanup.
+
+## Hardware-safe behavior
+- Add or change hardware calls behind existing interface layers (`interface/`, panel backends), not inline in UI handlers.
+- On device/config/path failure, fail gracefully: show actionable UI message and keep app responsive.
+- Keep a simulation/fallback path when feasible so core UI can still run without full hardware availability.
+
+## Logging and diagnostics
+- Log meaningful context for operational actions (device, mode, config source), not just exception text.
+- For recoverable errors, prefer warning logs + UI hints; reserve tracebacks for debugging paths.
+
+## Iteration checklist (before finishing a change)
+- Verify startup on a non-`D:` machine path setup (use existing `config/system_config_*.ini` conventions).
+- Verify no regression for main flow: app launch, config load, state change, and panel interaction.
+- Update or add a focused test/demo script when behavior changes significantly (follow existing `test_*.py` style).
+
+## Examples
+- Bad: `save_dir = "D:/NVMagUI_Data_dev1"` in code.
+- Good: `save_dir = sys_config.get("Path", "local_data_path")`.
+- Bad: calling device API directly in a button callback with blocking wait.
+- Good: delegate to backend worker and report result by signal.

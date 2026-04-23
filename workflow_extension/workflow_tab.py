@@ -1,0 +1,458 @@
+import json
+import logging
+
+import pyqtgraph as pg
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QTextDocument
+from PySide6.QtPrintSupport import QPrinter
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QMenu,
+    QSplitter,
+    QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from workflow_extension.builtins import register_builtin_nodes
+from workflow_extension.canvas import WorkflowCanvasView, WorkflowNodeItem, WorkflowScene
+from workflow_extension.engine import WorkflowExecutor
+from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
+from workflow_extension.node_registry import NodeRegistry
+from workflow_extension.serializer import export_json, export_python, load_workflow, save_workflow
+
+
+class WorkflowTab(QWidget):
+    def __init__(self, app_context=None, parent=None):
+        super().__init__(parent)
+        self.app_context = app_context
+        self.registry = NodeRegistry()
+        register_builtin_nodes(self.registry)
+        self.executor = WorkflowExecutor(self.registry, self)
+        self._latest_results = {}
+        self._plot_x = []
+        self._plot_y = []
+        self._plot_y_ref = []
+        self._prop_editors = {}
+        self._selected_node = None
+        self._build_ui()
+        self._bind_events()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        toolbar = QHBoxLayout()
+        self.btn_new = QPushButton("新建")
+        self.btn_load_demo = QPushButton("加载Demo流程")
+        self.btn_save = QPushButton("保存")
+        self.btn_load = QPushButton("加载")
+        self.btn_run = QPushButton("运行")
+        self.btn_stop = QPushButton("停止")
+        self.btn_clear = QPushButton("清空")
+        self.btn_export_json = QPushButton("导出JSON")
+        self.btn_export_py = QPushButton("导出Python")
+        self.btn_export_pdf = QPushButton("导出PDF")
+        self.btn_delete = QPushButton("删除选中")
+        for btn in [
+            self.btn_new,
+            self.btn_load_demo,
+            self.btn_save,
+            self.btn_load,
+            self.btn_run,
+            self.btn_stop,
+            self.btn_clear,
+            self.btn_delete,
+            self.btn_export_json,
+            self.btn_export_py,
+            self.btn_export_pdf,
+        ]:
+            toolbar.addWidget(btn)
+        toolbar.addStretch()
+        root.addLayout(toolbar)
+
+        splitter = QSplitter(Qt.Horizontal)
+        root.addWidget(splitter, 1)
+
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.addWidget(QLabel("节点库（双击添加）"))
+        self.palette_search = QLineEdit()
+        self.palette_search.setPlaceholderText("搜索节点名称/类型...")
+        left_layout.addWidget(self.palette_search)
+        self.palette = QTreeWidget()
+        self.palette.setHeaderHidden(True)
+        self.palette.setRootIsDecorated(True)
+        self.palette.setAnimated(True)
+        self.palette.setIndentation(14)
+        self.palette.setAlternatingRowColors(True)
+        grouped = self.registry.grouped()
+        for category, specs in grouped.items():
+            category_item = QTreeWidgetItem([category])
+            category_item.setFlags(Qt.ItemIsEnabled)
+            self.palette.addTopLevelItem(category_item)
+            for spec in specs:
+                item = QTreeWidgetItem([spec.title])
+                item.setData(0, Qt.UserRole, spec.node_type)
+                item.setToolTip(0, spec.node_type)
+                category_item.addChild(item)
+            category_item.setExpanded(True)
+        left_layout.addWidget(self.palette)
+        splitter.addWidget(left)
+
+        center = QWidget()
+        center_layout = QVBoxLayout(center)
+        self.scene = WorkflowScene(self)
+        self.scene.set_spec_resolver(self.registry.get)
+        self.scene.on_node_param_changed = self._on_node_inline_params_changed
+        self.canvas = WorkflowCanvasView(self.scene, self)
+        self.canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.canvas.customContextMenuRequested.connect(self._open_canvas_context_menu)
+        center_layout.addWidget(self.canvas, 1)
+        splitter.addWidget(center)
+
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        self.selected_node_label = QLabel("当前节点：无")
+        right_layout.addWidget(self.selected_node_label)
+        self.right_splitter = QSplitter(Qt.Vertical)
+        self.property_group = QGroupBox("节点属性")
+        self.property_form = QFormLayout(self.property_group)
+        self.plot_group = QGroupBox("工作流流式绘图")
+        plot_layout = QVBoxLayout(self.plot_group)
+        self.plot_widget = pg.PlotWidget()
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.2)
+        self.plot_widget.addLegend()
+        self.plot_curve = self.plot_widget.plot(pen=pg.mkPen("#f6d04d", width=2), name="测量值")
+        self.plot_curve_ref = self.plot_widget.plot(pen=pg.mkPen("#4aa3ff", width=1.6, style=Qt.DashLine), name="目标值")
+        self.plot_widget.setLabel("left", "Value")
+        self.plot_widget.setLabel("bottom", "Time / Angle")
+        plot_layout.addWidget(self.plot_widget)
+        self.right_splitter.addWidget(self.property_group)
+        self.right_splitter.addWidget(self.plot_group)
+        self.right_splitter.setSizes([220, 320])
+        right_layout.addWidget(self.right_splitter, 1)
+        splitter.addWidget(right)
+
+        splitter.setSizes([220, 860, 320])
+
+    def _bind_events(self):
+        self.palette.itemDoubleClicked.connect(self._on_palette_double_clicked)
+        self.palette_search.textChanged.connect(self._filter_palette)
+        self.scene.node_selected.connect(self._on_node_selected)
+        self.btn_delete.clicked.connect(self.scene.delete_selected)
+        self.btn_new.clicked.connect(self._new_workflow)
+        self.btn_load_demo.clicked.connect(self._load_demo_workflow)
+        self.btn_clear.clicked.connect(self.scene.clear_all)
+        self.btn_save.clicked.connect(self._save_workflow)
+        self.btn_load.clicked.connect(self._load_workflow)
+        self.btn_export_json.clicked.connect(self._export_json)
+        self.btn_export_py.clicked.connect(self._export_python)
+        self.btn_export_pdf.clicked.connect(self._export_pdf)
+        self.btn_run.clicked.connect(self._run_workflow)
+        self.btn_stop.clicked.connect(self._stop_workflow)
+        self.executor.node_started.connect(self._on_exec_node_started)
+        self.executor.node_finished.connect(self._on_exec_node_finished)
+        self.executor.node_failed.connect(self._on_exec_node_failed)
+        self.executor.run_finished.connect(self._on_exec_finished)
+
+    def _on_palette_double_clicked(self, item):
+        node_type = item.data(0, Qt.UserRole)
+        if not node_type:
+            return
+        spec = self.registry.get(node_type)
+        center_pos = self.canvas.mapToScene(self.canvas.viewport().rect().center())
+        self.scene.add_node(spec.node_type, spec.title, center_pos, params=dict(spec.default_params))
+        self._log(f"已添加节点: {spec.title}")
+
+    def _filter_palette(self, keyword):
+        query = keyword.strip().lower()
+        for i in range(self.palette.topLevelItemCount()):
+            category_item = self.palette.topLevelItem(i)
+            visible_count = 0
+            for j in range(category_item.childCount()):
+                node_item = category_item.child(j)
+                title = node_item.text(0).lower()
+                node_type = (node_item.data(0, Qt.UserRole) or "").lower()
+                match = not query or query in title or query in node_type
+                node_item.setHidden(not match)
+                if match:
+                    visible_count += 1
+            category_item.setHidden(visible_count == 0)
+            if query and visible_count:
+                category_item.setExpanded(True)
+
+    def _on_node_selected(self, node_model):
+        self._selected_node = node_model
+        self.selected_node_label.setText(f"当前节点：{node_model.title} ({node_model.node_id})")
+        while self.property_form.rowCount() > 0:
+            self.property_form.removeRow(0)
+        self._prop_editors = {}
+        for key, value in node_model.params.items():
+            editor = QLineEdit(str(value))
+            editor.editingFinished.connect(self._persist_node_params)
+            self._prop_editors[key] = editor
+            self.property_form.addRow(key, editor)
+        if not node_model.params:
+            self.property_form.addRow(QLabel("该节点无可配置参数"))
+
+    def _persist_node_params(self):
+        if not self._selected_node:
+            return
+        for key, editor in self._prop_editors.items():
+            text = editor.text().strip()
+            self._selected_node.params[key] = self._coerce_value(text)
+        self.scene.update()
+
+    def _on_node_inline_params_changed(self, node_model):
+        if self._selected_node and self._selected_node.node_id == node_model.node_id:
+            self._on_node_selected(node_model)
+
+    def _open_canvas_context_menu(self, pos):
+        scene_pos = self.canvas.mapToScene(pos)
+        node_item = self.scene.find_node_at(scene_pos)
+        menu = QMenu(self)
+
+        if isinstance(node_item, WorkflowNodeItem):
+            copy_action = menu.addAction("复制节点")
+            copy_action.triggered.connect(lambda: self._copy_node(node_item))
+            del_action = menu.addAction("删除节点")
+            del_action.triggered.connect(lambda: self._delete_node(node_item))
+            link_action = menu.addAction("从此节点开始连线")
+            link_action.triggered.connect(lambda: self._start_link_from_node(node_item))
+            if not node_item.spec.output_ports:
+                link_action.setEnabled(False)
+            menu.addSeparator()
+
+        add_menu = menu.addMenu("添加节点")
+        grouped = self.registry.grouped()
+        for category, specs in grouped.items():
+            category_menu = add_menu.addMenu(category)
+            for spec in specs:
+                action = category_menu.addAction(spec.title)
+                action.triggered.connect(
+                    lambda checked=False, node_type=spec.node_type, title=spec.title, s_pos=scene_pos: self._add_node_at(
+                        node_type, title, s_pos
+                    )
+                )
+        if not isinstance(node_item, WorkflowNodeItem):
+            menu.addSeparator()
+            delete_action = menu.addAction("删除选中节点")
+            delete_action.triggered.connect(self.scene.delete_selected)
+            delete_action.setEnabled(bool(self.scene.selectedItems()))
+        menu.exec(self.canvas.viewport().mapToGlobal(pos))
+
+    def _add_node_at(self, node_type, title, scene_pos):
+        spec = self.registry.get(node_type)
+        self.scene.add_node(spec.node_type, title, scene_pos, params=dict(spec.default_params))
+        self._log(f"已添加节点: {title}")
+
+    def _copy_node(self, node_item):
+        offset = self.canvas.mapToScene(40, 40) - self.canvas.mapToScene(0, 0)
+        pos = node_item.pos() + offset
+        self.scene.add_node(
+            node_item.model.node_type,
+            node_item.model.title,
+            pos,
+            params=dict(node_item.model.params),
+        )
+        self._log(f"已复制节点: {node_item.model.title}")
+
+    def _delete_node(self, node_item):
+        self.scene.clearSelection()
+        node_item.setSelected(True)
+        self.scene.delete_selected()
+        self._log("已删除节点。")
+
+    def _start_link_from_node(self, node_item):
+        ok = self.scene.begin_link_from_node(node_item)
+        if ok:
+            self._log("已进入连线模式：请左键点击目标节点输入端口。")
+        else:
+            self._log("该节点没有可用输出端口，无法开始连线。")
+
+    @staticmethod
+    def _coerce_value(text):
+        if text.lower() in {"true", "false"}:
+            return text.lower() == "true"
+        try:
+            if "." in text:
+                return float(text)
+            return int(text)
+        except ValueError:
+            return text
+
+    def _new_workflow(self):
+        self.scene.clear_all()
+        self._latest_results = {}
+        self._plot_x = []
+        self._plot_y = []
+        self._plot_y_ref = []
+        self.plot_curve.setData([], [])
+        self.plot_curve_ref.setData([], [])
+        self._log("已新建空白工作流。")
+
+    def _load_demo_workflow(self):
+        graph = WorkflowGraphModel(name="双路锁相流程 Demo")
+        nodes = [
+            ("n_start", "demo.start", "开始", (60, 100)),
+            ("n_init", "demo.init_device", "初始化设备", (360, 100)),
+            ("n_coarse", "demo.coarse_scan", "全光谱扫描", (660, 100)),
+            ("n_left", "demo.define_left", "定义左侧角度区间", (960, 20)),
+            ("n_left_scan", "demo.left_fine_scan", "执行左区精扫", (1260, 20)),
+            ("n_right", "demo.define_right", "定义右侧角度区间", (960, 190)),
+            ("n_right_scan", "demo.right_fine_scan", "执行右区精扫", (1260, 190)),
+            ("n_pick", "demo.select_region", "确认最优角度", (1560, 100)),
+            ("n_freq", "demo.compute_work_freq", "计算工作点频率", (1860, 100)),
+            ("n_apply", "demo.apply_work_freq", "设置双路微波并采集", (2160, 100)),
+            ("n_monitor", "demo.monitor_drift", "观测误差数据", (2460, 100)),
+        ]
+        for node_id, node_type, title, pos in nodes:
+            spec = self.registry.get(node_type)
+            graph.nodes.append(
+                WorkflowNodeModel(
+                    node_id=node_id,
+                    node_type=node_type,
+                    title=title,
+                    position=pos,
+                    params=dict(spec.default_params),
+                )
+            )
+        graph.edges.extend(
+            [
+                WorkflowEdgeModel("n_start", "n_init", "ctx_out", "ctx_in"),
+                WorkflowEdgeModel("n_init", "n_coarse", "ctx_out", "ctx_in"),
+                WorkflowEdgeModel("n_coarse", "n_left", "scan_out", "scan_in"),
+                WorkflowEdgeModel("n_left", "n_left_scan", "left_out", "range_in"),
+                WorkflowEdgeModel("n_coarse", "n_right", "scan_out", "scan_in"),
+                WorkflowEdgeModel("n_right", "n_right_scan", "right_out", "range_in"),
+                WorkflowEdgeModel("n_left_scan", "n_pick", "result_out", "left_in"),
+                WorkflowEdgeModel("n_right_scan", "n_pick", "result_out", "right_in"),
+                WorkflowEdgeModel("n_pick", "n_freq", "best_out", "best_in"),
+                WorkflowEdgeModel("n_freq", "n_apply", "freq_out", "freq_in"),
+                WorkflowEdgeModel("n_apply", "n_monitor", "state_out", "state_in"),
+            ]
+        )
+        self.scene.load_graph(graph)
+        self._latest_results = {}
+        self._plot_x = []
+        self._plot_y = []
+        self._plot_y_ref = []
+        self.plot_curve.setData([], [])
+        self.plot_curve_ref.setData([], [])
+        self._log("已加载流程 Demo，可直接点击运行。")
+
+    def _save_workflow(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "保存工作流", "", "NVM Workflow (*.nvm_workflow)")
+        if not file_path:
+            return
+        graph = self.scene.build_graph()
+        save_workflow(graph, file_path)
+        self._log(f"工作流已保存: {file_path}")
+
+    def _load_workflow(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "加载工作流", "", "NVM Workflow (*.nvm_workflow)")
+        if not file_path:
+            return
+        graph = load_workflow(file_path)
+        self.scene.load_graph(graph)
+        self._log(f"工作流已加载: {file_path}")
+
+    def _export_json(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "导出 JSON", "", "JSON (*.json)")
+        if not file_path:
+            return
+        export_json(self.scene.build_graph(), file_path)
+        self._log(f"已导出 JSON: {file_path}")
+
+    def _export_python(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "导出 Python", "", "Python (*.py)")
+        if not file_path:
+            return
+        export_python(self.scene.build_graph(), file_path)
+        self._log(f"已导出 Python: {file_path}")
+
+    def _export_pdf(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "导出 PDF", "", "PDF (*.pdf)")
+        if not file_path:
+            return
+        payload = {
+            "graph": {
+                "nodes": [n.__dict__ for n in self.scene.build_graph().nodes],
+                "edges": [e.__dict__ for e in self.scene.build_graph().edges],
+            },
+            "results": self._latest_results,
+        }
+        doc = QTextDocument()
+        doc.setPlainText("NVMagUI Workflow Report\n\n" + json.dumps(payload, ensure_ascii=False, indent=2))
+        printer = QPrinter()
+        printer.setOutputFormat(QPrinter.PdfFormat)
+        printer.setOutputFileName(file_path)
+        doc.print_(printer)
+        self._log(f"已导出 PDF: {file_path}")
+
+    def _run_workflow(self):
+        graph = self.scene.build_graph()
+        if not graph.nodes:
+            QMessageBox.warning(self, "提示", "当前工作流为空。")
+            return
+        self._latest_results = {}
+        self._plot_x = []
+        self._plot_y = []
+        self._plot_y_ref = []
+        self.plot_curve.setData([], [])
+        self.plot_curve_ref.setData([], [])
+        self._log("开始执行工作流。")
+        context = {"app": self.app_context, "plot_callback": self._on_plot_payload}
+        self.executor.run(graph, context)
+
+    def _stop_workflow(self):
+        self.executor.stop()
+        self._log("已请求停止工作流执行。")
+
+    def _on_exec_node_started(self, node_id):
+        item = self.scene.node_items.get(node_id)
+        if isinstance(item, WorkflowNodeItem):
+            item.setBrush(pg.mkBrush("#2f5d9b"))
+        self._log(f"[RUN] {node_id}")
+
+    def _on_exec_node_finished(self, node_id, result):
+        item = self.scene.node_items.get(node_id)
+        if isinstance(item, WorkflowNodeItem):
+            item.setBrush(pg.mkBrush("#2a7d46"))
+        self._latest_results[node_id] = result
+        self._log(f"[OK] {node_id} -> {result}")
+
+    def _on_exec_node_failed(self, node_id, err):
+        item = self.scene.node_items.get(node_id)
+        if isinstance(item, WorkflowNodeItem):
+            item.setBrush(pg.mkBrush("#8d2d2d"))
+        self._log(f"[ERR] {node_id} -> {err}")
+
+    def _on_exec_finished(self):
+        self._log("工作流执行结束。")
+
+    def _on_plot_payload(self, payload):
+        x = payload.get("x")
+        y = payload.get("y")
+        y2 = payload.get("y2")
+        if x is None or (y is None and y2 is None):
+            return
+        self._plot_x.append(x)
+        self._plot_y.append(float("nan") if y is None else y)
+        self._plot_y_ref.append(float("nan") if y2 is None else y2)
+        self._plot_x = self._plot_x[-1200:]
+        self._plot_y = self._plot_y[-1200:]
+        self._plot_y_ref = self._plot_y_ref[-1200:]
+        self.plot_curve.setData(self._plot_x, self._plot_y)
+        self.plot_curve_ref.setData(self._plot_x, self._plot_y_ref)
+
+    def _log(self, text):
+        logging.info(f"[Workflow] {text}")
