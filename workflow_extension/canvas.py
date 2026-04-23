@@ -1,8 +1,8 @@
 import uuid
 import logging
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer, QEvent, QObject
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,10 +18,35 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QWidget,
     QLabel,
+    QStyle,
 )
 
 from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
 from workflow_extension.node_registry import NodeSpec
+from workflow_extension.undo_system import WorkflowUndoStack, AddNodeCommand, DeleteNodesCommand, AddEdgeCommand, RemoveEdgeCommand, MoveNodesCommand
+
+
+class TitleEditEventFilter(QObject):
+    """标题编辑框的事件过滤器"""
+    def __init__(self, edit_widget, node_item):
+        super().__init__()
+        self._edit_widget = edit_widget
+        self._node_item = node_item
+    
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+                # Enter键：完成编辑
+                self._node_item._finish_edit_title()
+                return True
+            elif event.key() == Qt.Key_Escape:
+                # Escape键：取消编辑
+                self._node_item._cancel_edit_title()
+                return True
+            # 其他键（包括Backspace、Delete、方向键等）让QLineEdit正常处理
+            # 不拦截，返回False让默认处理器处理
+        
+        return super().eventFilter(obj, event)
 
 
 class WorkflowNodeItem(QGraphicsRectItem):
@@ -40,6 +65,11 @@ class WorkflowNodeItem(QGraphicsRectItem):
         self._input_ports = {}
         self._output_ports = {}
         self._proxy = None
+        # 新增：标题编辑相关
+        self._title_edit_proxy = None
+        self._title_edit_widget = None
+        self._is_editing_title = False
+        self._edit_event_filter = None  # 事件过滤器
         self._build_param_widget()
         self._rebuild_ports()
 
@@ -140,6 +170,128 @@ class WorkflowNodeItem(QGraphicsRectItem):
                 return is_output, name
         return None
 
+    def mouseDoubleClickEvent(self, event):
+        """双击事件：开始编辑节点标题"""
+        if event.button() == Qt.LeftButton:
+            # 检查是否点击在标题区域
+            header_rect = self.rect().adjusted(0, 0, 0, -(self.rect().height() - self._header_h))
+            if header_rect.contains(event.pos()):
+                self._start_edit_title()
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
+    
+    def _start_edit_title(self):
+        """开始编辑节点标题"""
+        if self._is_editing_title:
+            return
+        
+        self._is_editing_title = True
+        
+        # 创建编辑框
+        self._title_edit_widget = QLineEdit(self.model.title)
+        self._title_edit_widget.setStyleSheet("""
+            QLineEdit {
+                background-color: #f0f0f0;
+                border: 2px solid #4A90E2;
+                border-radius: 4px;
+                padding: 2px 4px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+        """)
+        
+        # 创建事件过滤器来处理键盘事件
+        self._edit_event_filter = TitleEditEventFilter(self._title_edit_widget, self)
+        self._title_edit_widget.installEventFilter(self._edit_event_filter)
+        
+        # 创建代理组件
+        self._title_edit_proxy = QGraphicsProxyWidget(self)
+        self._title_edit_proxy.setWidget(self._title_edit_widget)
+        
+        # 设置位置和大小
+        header_rect = self.rect().adjusted(0, 0, 0, -(self.rect().height() - self._header_h))
+        edit_rect = header_rect.adjusted(28, 6, -16, -6)
+        self._title_edit_proxy.setPos(edit_rect.topLeft())
+        self._title_edit_proxy.resize(edit_rect.width(), edit_rect.height())
+        self._title_edit_proxy.setZValue(10)  # 确保在最上层
+        
+        # 设置焦点和选中
+        QTimer.singleShot(0, self._set_edit_focus)
+        
+        self.update()
+    
+    def _set_edit_focus(self):
+        """设置编辑框焦点和选中"""
+        if self._title_edit_widget:
+            self._title_edit_widget.setFocus()
+            self._title_edit_widget.selectAll()
+    
+    def _finish_edit_title(self):
+        """完成编辑节点标题"""
+        if not self._is_editing_title or not self._title_edit_widget:
+            return
+        
+        new_title = self._title_edit_widget.text().strip()
+        if new_title and new_title != self.model.title:
+            old_title = self.model.title
+            self.model.title = new_title
+            
+            # 通知参数变化
+            if self._on_param_changed:
+                self._on_param_changed(self.model)
+            
+            # 如果有场景，通知场景图发生变化
+            if self.scene():
+                self.scene().graph_changed.emit()
+        
+        # 清理编辑组件
+        self._cleanup_title_edit()
+        
+        self.update()
+    
+    def _cancel_edit_title(self):
+        """取消编辑节点标题"""
+        if not self._is_editing_title:
+            return
+        
+        # 清理编辑组件，不保存更改
+        self._cleanup_title_edit()
+        
+        self.update()
+    
+    def _cleanup_title_edit(self):
+        """清理标题编辑组件"""
+        self._is_editing_title = False
+        
+        if self._title_edit_proxy:
+            # 移除事件过滤器
+            if self._edit_event_filter:
+                self._title_edit_widget.removeEventFilter(self._edit_event_filter)
+                self._edit_event_filter = None
+            
+            if self.scene():
+                self.scene().removeItem(self._title_edit_proxy)
+            self._title_edit_proxy = None
+            self._title_edit_widget = None
+    
+    def keyPressEvent(self, event):
+        """处理键盘事件：Escape取消"""
+        if self._is_editing_title and self._title_edit_widget:
+            if event.key() == Qt.Key_Escape:
+                self._cancel_edit_title()
+                event.accept()
+                return
+        
+        super().keyPressEvent(event)
+    
+    def focusOutEvent(self, event):
+        """失去焦点时自动完成编辑"""
+        if self._is_editing_title:
+            # 立即处理，避免延迟导致的问题
+            self._finish_edit_title()
+        super().focusOutEvent(event)
+
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
             self.scene().update_edges_for_node(self.model.node_id)
@@ -151,6 +303,15 @@ class WorkflowNodeItem(QGraphicsRectItem):
         header_rect = body_rect.adjusted(0, 0, 0, -(body_rect.height() - self._header_h))
         radius = 10
 
+        # ComfyUI风格：选中时绘制高亮边框
+        if option.state & QStyle.State_Selected:
+            # 绘制选中高亮边框（蓝色，稍微粗一点）
+            highlight_pen = QPen(QColor("#4A90E2"), 3.0)
+            highlight_pen.setCosmetic(True)  # 确保线宽不受缩放影响
+            painter.setPen(highlight_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(body_rect.adjusted(-1, -1, 1, 1), radius, radius)
+
         painter.setPen(QPen(QColor("#7c7c7c"), 1.0))
         painter.setBrush(QBrush(QColor("#f2f2f2")))
         painter.drawRoundedRect(body_rect, radius, radius)
@@ -161,7 +322,9 @@ class WorkflowNodeItem(QGraphicsRectItem):
         painter.drawRect(0, self._header_h - radius, body_rect.width(), radius)
 
         painter.setPen(QPen(QColor("#303030")))
-        painter.drawText(header_rect.adjusted(28, 8, -12, -8), Qt.AlignLeft | Qt.AlignVCenter, self.model.title)
+        # 如果正在编辑标题，不显示静态标题
+        if not self._is_editing_title:
+            painter.drawText(header_rect.adjusted(28, 8, -12, -8), Qt.AlignLeft | Qt.AlignVCenter, self.model.title)
 
         painter.setPen(QPen(QColor("#9e9e9e")))
         painter.drawLine(12, self._header_h + 20, body_rect.width() - 12, self._header_h + 20)
@@ -172,18 +335,21 @@ class WorkflowNodeItem(QGraphicsRectItem):
         painter.setBrush(QBrush(QColor("#17b34a")))
         painter.drawEllipse(QPointF(body_rect.width() - 14, 17), 4, 4)
 
-        painter.setPen(QPen(QColor("#6f6f6f")))
-        painter.drawText(body_rect.adjusted(10, self._header_h + 2, -10, -10), Qt.AlignLeft | Qt.AlignTop, self.model.node_type)
+        # 移除英文node_type显示，只保留中文标题
+        # painter.setPen(QPen(QColor("#6f6f6f")))
+        # painter.drawText(body_rect.adjusted(10, self._header_h + 2, -10, -10), Qt.AlignLeft | Qt.AlignTop, self.model.node_type)
 
         painter.setPen(QPen(QColor("#8f8f8f")))
         painter.setBrush(QBrush(QColor("#4d8fdf")))
         for name, pos in self._input_ports.items():
             painter.drawEllipse(pos, self._port_radius, self._port_radius)
-            painter.drawText(pos + QPointF(8, 4), name)
+            # 移除英文端口名称显示
+            # painter.drawText(pos + QPointF(8, 4), name)
         for name, pos in self._output_ports.items():
             painter.drawEllipse(pos, self._port_radius, self._port_radius)
-            txt_w = min(90, painter.fontMetrics().horizontalAdvance(name))
-            painter.drawText(pos + QPointF(-(txt_w + 10), 4), name)
+            # 移除英文端口名称显示
+            # txt_w = min(90, painter.fontMetrics().horizontalAdvance(name))
+            # painter.drawText(pos + QPointF(-(txt_w + 10), 4), name)
 
 
 class WorkflowEdgeItem(QGraphicsPathItem):
@@ -232,6 +398,13 @@ class WorkflowScene(QGraphicsScene):
         self._drag_from = None
         self._drag_edge = None
         self._armed_link_source = None
+        # 新增：线段拖拽相关状态
+        self._dragging_existing_edge = False
+        self._dragged_edge_info = None  # (edge_item, src_item, src_port, dst_item, dst_port, is_dragging_from_src)
+        # 新增：撤销/重做系统
+        self.undo_stack = WorkflowUndoStack()
+        self._node_move_start_positions = {}  # 节点移动开始位置
+        self._is_moving_nodes = False
         # Remove scene rect limitation to enable infinite canvas
 # self.setSceneRect(-2000, -2000, 4000, 4000)
 
@@ -276,6 +449,12 @@ class WorkflowScene(QGraphicsScene):
             painter.drawLine(x1, y1, x2, y2)
         painter.restore()
 
+    def add_node_with_undo(self, node_type, title, pos, params=None, node_id=None):
+        """通过撤销系统添加节点"""
+        command = AddNodeCommand(node_type, title, pos, params, node_id)
+        self.undo_stack.push_command(command, self)
+        return command.created_node
+    
     def add_node(self, node_type, title, pos, params=None, node_id=None):
         node_id = node_id or f"node_{uuid.uuid4().hex[:8]}"
         model = WorkflowNodeModel(
@@ -299,11 +478,18 @@ class WorkflowScene(QGraphicsScene):
                 dst_item, dst_port = target
                 src_item, src_port = self._armed_link_source
                 if src_item is not dst_item and self._is_port_compatible(src_item, src_port, dst_item, dst_port):
-                    self._add_edge(src_item, src_port, dst_item, dst_port)
+                    self._add_edge_with_undo(src_item, src_port, dst_item, dst_port)
             self._armed_link_source = None
             event.accept()
             return
         if event.button() == Qt.LeftButton:
+            # 首先检查是否点击了已存在线段的端点
+            edge_info = self._find_edge_endpoint_hit(event.scenePos())
+            if edge_info:
+                self._start_drag_existing_edge(edge_info, event.scenePos())
+                event.accept()
+                return
+            # 然后检查是否点击了输出端口（创建新连接）
             hit = self._find_port_hit(event.scenePos(), require_output=True)
             if hit:
                 src_item, src_port = hit
@@ -313,6 +499,13 @@ class WorkflowScene(QGraphicsScene):
                 self._drag_edge.set_temp_target(event.scenePos())
                 event.accept()
                 return
+            # 检查是否开始移动节点
+            selected_items = [item for item in self.selectedItems() if isinstance(item, WorkflowNodeItem)]
+            if selected_items:
+                self._is_moving_nodes = True
+                self._node_move_start_positions = {}
+                for item in selected_items:
+                    self._node_move_start_positions[item.model.node_id] = (item.pos().x(), item.pos().y())
         super().mousePressEvent(event)
         selected = self.selectedItems()
         if selected and isinstance(selected[0], WorkflowNodeItem):
@@ -326,18 +519,48 @@ class WorkflowScene(QGraphicsScene):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if self._drag_edge is not None and self._drag_from is not None:
-            src_item, src_port = self._drag_from
-            self.removeItem(self._drag_edge)
-            self._drag_edge = None
-            target = self._find_port_hit(event.scenePos(), require_output=False)
-            self._drag_from = None
-            if target:
-                dst_item, dst_port = target
-                if src_item is not dst_item and self._is_port_compatible(src_item, src_port, dst_item, dst_port):
-                    self._add_edge(src_item, src_port, dst_item, dst_port)
-            event.accept()
-            return
+        if self._drag_edge is not None:
+            if self._dragging_existing_edge and self._dragged_edge_info:
+                # 处理已存在线段的拖拽释放
+                self._finish_drag_existing_edge(event.scenePos())
+                event.accept()
+                return
+            elif self._drag_from is not None:
+                # 处理新创建线段的释放
+                src_item, src_port = self._drag_from
+                self.removeItem(self._drag_edge)
+                self._drag_edge = None
+                target = self._find_port_hit(event.scenePos(), require_output=False)
+                self._drag_from = None
+                if target:
+                    dst_item, dst_port = target
+                    if src_item is not dst_item and self._is_port_compatible(src_item, src_port, dst_item, dst_port):
+                        self._add_edge_with_undo(src_item, src_port, dst_item, dst_port)
+                event.accept()
+                return
+        
+        # 处理节点移动的撤销
+        if self._is_moving_nodes and self._node_move_start_positions:
+            selected_items = [item for item in self.selectedItems() if isinstance(item, WorkflowNodeItem)]
+            if selected_items:
+                node_moves = []
+                for item in selected_items:
+                    node_id = item.model.node_id
+                    if node_id in self._node_move_start_positions:
+                        old_pos = self._node_move_start_positions[node_id]
+                        new_pos = (item.pos().x(), item.pos().y())
+                        # 只有位置真正改变时才记录
+                        if old_pos != new_pos:
+                            node_moves.append((node_id, old_pos, new_pos))
+                
+                if node_moves:
+                    command = MoveNodesCommand(node_moves)
+                    self.undo_stack.push_command(command, self)
+        
+        # 清理移动状态
+        self._is_moving_nodes = False
+        self._node_move_start_positions.clear()
+        
         super().mouseReleaseEvent(event)
 
     def _find_port_hit(self, pos, require_output=None):
@@ -349,6 +572,136 @@ class WorkflowScene(QGraphicsScene):
                     return item, name
         return None
 
+    def _find_edge_endpoint_hit(self, scene_pos):
+        """检查点击位置是否命中了已存在线段的端点"""
+        port_radius = 8  # 端点检测半径
+        
+        for edge_info in self.edges:
+            from_id, from_port, to_id, to_port, edge_item = edge_info
+            src_item = self.node_items.get(from_id)
+            dst_item = self.node_items.get(to_id)
+            
+            if not src_item or not dst_item:
+                continue
+                
+            # 检查输出端点
+            src_anchor = src_item.anchor(from_port, is_output=True)
+            if (scene_pos - src_anchor).manhattanLength() < port_radius:
+                return (edge_item, src_item, from_port, dst_item, to_port, True)  # True表示从输出端拖拽
+                
+            # 检查输入端点
+            dst_anchor = dst_item.anchor(to_port, is_output=False)
+            if (scene_pos - dst_anchor).manhattanLength() < port_radius:
+                return (edge_item, src_item, from_port, dst_item, to_port, False)  # False表示从输入端拖拽
+                
+        return None
+
+    def _start_drag_existing_edge(self, edge_info, scene_pos):
+        """开始拖拽已存在的线段"""
+        edge_item, src_item, src_port, dst_item, dst_port, is_dragging_from_src = edge_info
+        
+        # 保存原始线段信息
+        self._dragged_edge_info = edge_info
+        self._dragging_existing_edge = True
+        
+        # 创建临时拖拽线段
+        if is_dragging_from_src:
+            # 从输出端拖拽，保持输入端不变
+            self._drag_from = (dst_item, dst_port)  # 反向连接，输入作为源
+            self._drag_edge = WorkflowEdgeItem(dst_item, dst_port, dst_item, dst_port, temporary=True)
+        else:
+            # 从输入端拖拽，保持输出端不变
+            self._drag_from = (src_item, src_port)
+            self._drag_edge = WorkflowEdgeItem(src_item, src_port, src_item, src_port, temporary=True)
+            
+        self.addItem(self._drag_edge)
+        self._drag_edge.set_temp_target(scene_pos)
+        
+        # 隐藏原始线段（但不删除，以便可能恢复）
+        edge_item.setVisible(False)
+        
+        logging.debug("[WorkflowCanvas] start dragging existing edge from %s", 
+                     "output" if is_dragging_from_src else "input")
+
+    def _finish_drag_existing_edge(self, scene_pos):
+        """完成线段拖拽"""
+        if not self._dragged_edge_info:
+            return
+            
+        edge_item, src_item, src_port, dst_item, dst_port, is_dragging_from_src = self._dragged_edge_info
+        
+        # 移除临时拖拽线段
+        if self._drag_edge:
+            self.removeItem(self._drag_edge)
+            self._drag_edge = None
+        self._drag_from = None
+        
+        # 检查新的连接目标
+        new_target = None
+        if is_dragging_from_src:
+            # 从输出端拖拽，寻找新的输入端
+            new_target = self._find_port_hit(scene_pos, require_output=False)
+        else:
+            # 从输入端拖拽，寻找新的输出端
+            new_target = self._find_port_hit(scene_pos, require_output=True)
+            
+        if new_target:
+            new_item, new_port = new_target
+            
+            # 检查兼容性和有效性
+            if is_dragging_from_src:
+                # 从输出端拖拽到新输入端
+                if (new_item is not src_item and 
+                    self._is_port_compatible(src_item, src_port, new_item, new_port)):
+                    # 删除旧连接，创建新连接
+                    self._remove_edge_with_undo(edge_item)
+                    self._add_edge_with_undo(src_item, src_port, new_item, new_port)
+                    logging.debug("[WorkflowCanvas] edge reconnected: %s.%s -> %s.%s", 
+                                 src_item.model.node_id, src_port, new_item.model.node_id, new_port)
+                else:
+                    # 连接无效，恢复原始线段
+                    edge_item.setVisible(True)
+                    logging.debug("[WorkflowCanvas] edge reconnect cancelled, restored original")
+            else:
+                # 从输入端拖拽到新输出端
+                if (new_item is not dst_item and 
+                    self._is_port_compatible(new_item, new_port, dst_item, dst_port)):
+                    # 删除旧连接，创建新连接
+                    self._remove_edge_with_undo(edge_item)
+                    self._add_edge_with_undo(new_item, new_port, dst_item, dst_port)
+                    logging.debug("[WorkflowCanvas] edge reconnected: %s.%s -> %s.%s", 
+                                 new_item.model.node_id, new_port, dst_item.model.node_id, dst_port)
+                else:
+                    # 连接无效，恢复原始线段
+                    edge_item.setVisible(True)
+                    logging.debug("[WorkflowCanvas] edge reconnect cancelled, restored original")
+        else:
+            # 没有连接到新端口，删除线段
+            self._remove_edge_with_undo(edge_item)
+            logging.debug("[WorkflowCanvas] edge deleted after drag with no connection")
+            
+        # 清理状态
+        self._dragging_existing_edge = False
+        self._dragged_edge_info = None
+
+    def _remove_edge_with_undo(self, edge_item):
+        """通过撤销系统删除连接"""
+        for edge_info in list(self.edges):
+            if edge_info[4] == edge_item:
+                from_id, from_port, to_id, to_port, _ = edge_info
+                command = RemoveEdgeCommand(edge_info)
+                self.undo_stack.push_command(command, self)
+                break
+    
+    def _remove_edge(self, edge_item):
+        """移除指定的线段"""
+        for edge_info in list(self.edges):
+            if edge_info[4] == edge_item:
+                self.edges.remove(edge_info)
+                self.removeItem(edge_item)
+                self.graph_changed.emit()
+                break
+
     def find_node_at(self, pos):
         for item in self.items(pos):
             if isinstance(item, WorkflowNodeItem):
@@ -358,7 +711,11 @@ class WorkflowScene(QGraphicsScene):
     def is_interactive_hit(self, pos):
         if self.find_node_at(pos) is not None:
             return True
-        return self._find_port_hit(pos, require_output=None) is not None
+        if self._find_port_hit(pos, require_output=None) is not None:
+            return True
+        if self._find_edge_endpoint_hit(pos) is not None:
+            return True
+        return False
 
     def begin_link_from_node(self, node_item):
         if not isinstance(node_item, WorkflowNodeItem):
@@ -437,6 +794,11 @@ class WorkflowScene(QGraphicsScene):
         dst_t = self._port_type(dst_item.spec, dst_port, output=False)
         return src_t == "any" or dst_t == "any" or src_t == dst_t
 
+    def _add_edge_with_undo(self, src_item, src_port, dst_item, dst_port):
+        """通过撤销系统添加连接"""
+        command = AddEdgeCommand(src_item.model.node_id, src_port, dst_item.model.node_id, dst_port)
+        self.undo_stack.push_command(command, self)
+    
     def _add_edge(self, src_item, src_port, dst_item, dst_port):
         for edge in list(self.edges):
             if edge[2] == dst_item.model.node_id and edge[3] == dst_port:
@@ -452,6 +814,14 @@ class WorkflowScene(QGraphicsScene):
             if from_id == node_id or to_id == node_id:
                 edge_item.refresh_path()
 
+    def delete_selected_with_undo(self):
+        """通过撤销系统删除选中节点"""
+        selected_items = [item for item in self.selectedItems() if isinstance(item, WorkflowNodeItem)]
+        if selected_items:
+            node_ids = [item.model.node_id for item in selected_items]
+            command = DeleteNodesCommand(node_ids)
+            self.undo_stack.push_command(command, self)
+    
     def delete_selected(self):
         for it in self.selectedItems():
             if isinstance(it, WorkflowNodeItem):
@@ -471,6 +841,9 @@ class WorkflowScene(QGraphicsScene):
         self._drag_from = None
         self._drag_edge = None
         self._armed_link_source = None
+        # 清除线段拖拽相关状态
+        self._dragging_existing_edge = False
+        self._dragged_edge_info = None
         self.graph_changed.emit()
 
     def build_graph(self):
@@ -534,6 +907,9 @@ class WorkflowCanvasView(QGraphicsView):
         
         # Set initial large scene rect that will expand dynamically
         scene.setSceneRect(-10000, -10000, 20000, 20000)
+        
+        # 启用键盘快捷键
+        self.setFocusPolicy(Qt.StrongFocus)
 
     def _update_overlay(self, view_pos=None, force_show=False):
         if view_pos is None:
@@ -629,6 +1005,50 @@ class WorkflowCanvasView(QGraphicsView):
         # Apply expansion if needed
         if new_rect != current_rect:
             self.scene().setSceneRect(new_rect)
+
+    def keyPressEvent(self, event):
+        """处理键盘快捷键"""
+        # 检查是否有节点正在编辑标题
+        is_any_node_editing = False
+        for item in self.scene().selectedItems():
+            if isinstance(item, WorkflowNodeItem) and hasattr(item, '_is_editing_title') and item._is_editing_title:
+                is_any_node_editing = True
+                break
+        
+        # 如果有节点正在编辑，不处理删除键
+        if is_any_node_editing and (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace):
+            # 让编辑框处理这些键
+            super().keyPressEvent(event)
+            return
+        
+        # 撤销/重做快捷键
+        if event.key() == Qt.Key_Z and event.modifiers() == Qt.ControlModifier:
+            # Ctrl+Z - 撤销
+            if self.scene().undo_stack.can_undo():
+                self.scene().undo_stack.undo(self.scene())
+            event.accept()
+            return
+        elif (event.key() == Qt.Key_Z and 
+              event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier)):
+            # Ctrl+Shift+Z - 重做
+            if self.scene().undo_stack.can_redo():
+                self.scene().undo_stack.redo(self.scene())
+            event.accept()
+            return
+        elif event.key() == Qt.Key_Y and event.modifiers() == Qt.ControlModifier:
+            # Ctrl+Y - 重做（另一种常见快捷键）
+            if self.scene().undo_stack.can_redo():
+                self.scene().undo_stack.redo(self.scene())
+            event.accept()
+            return
+        elif event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+            # Delete/Backspace - 删除选中节点（仅在非编辑状态下）
+            if self.scene().selectedItems():
+                self.scene().delete_selected_with_undo()
+                event.accept()
+            return
+        
+        super().keyPressEvent(event)
 
     def wheelEvent(self, event):
         factor = 1.15 if event.angleDelta().y() > 0 else 0.87

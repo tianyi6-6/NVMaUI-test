@@ -50,22 +50,38 @@ class WorkflowTab(QWidget):
     def _build_ui(self):
         root = QVBoxLayout(self)
         toolbar = QHBoxLayout()
+        
+        # 基本操作按钮
         self.btn_new = QPushButton("新建")
         self.btn_load_demo = QPushButton("加载Demo流程")
         self.btn_save = QPushButton("保存")
         self.btn_load = QPushButton("加载")
+        
+        # 撤销/重做按钮
+        self.btn_undo = QPushButton("撤销")
+        self.btn_redo = QPushButton("重做")
+        self.btn_undo.setToolTip("Ctrl+Z")
+        self.btn_redo.setToolTip("Ctrl+Shift+Z 或 Ctrl+Y")
+        
+        # 运行相关按钮
         self.btn_run = QPushButton("运行")
         self.btn_stop = QPushButton("停止")
         self.btn_clear = QPushButton("清空")
+        self.btn_delete = QPushButton("删除选中")
+        
+        # 导出按钮
         self.btn_export_json = QPushButton("导出JSON")
         self.btn_export_py = QPushButton("导出Python")
         self.btn_export_pdf = QPushButton("导出PDF")
-        self.btn_delete = QPushButton("删除选中")
+        
+        # 添加按钮到工具栏
         for btn in [
             self.btn_new,
             self.btn_load_demo,
             self.btn_save,
             self.btn_load,
+            self.btn_undo,
+            self.btn_redo,
             self.btn_run,
             self.btn_stop,
             self.btn_clear,
@@ -144,20 +160,38 @@ class WorkflowTab(QWidget):
         splitter.setSizes([220, 860, 320])
 
     def _bind_events(self):
+        # 基本事件绑定
+        self.btn_new.clicked.connect(self._on_new)
+        self.btn_load_demo.clicked.connect(self._on_load_demo)
+        self.btn_save.clicked.connect(self._on_save)
+        self.btn_load.clicked.connect(self._on_load)
+        self.btn_run.clicked.connect(self._on_run)
+        self.btn_stop.clicked.connect(self._on_stop)
+        self.btn_clear.clicked.connect(self._on_clear)
+        self.btn_delete.clicked.connect(self._on_delete_selected)
+        self.btn_export_json.clicked.connect(self._on_export_json)
+        self.btn_export_py.clicked.connect(self._on_export_py)
+        self.btn_export_pdf.clicked.connect(self._on_export_pdf)
+        
+        # 撤销/重做事件绑定
+        self.btn_undo.clicked.connect(self._on_undo)
+        self.btn_redo.clicked.connect(self._on_redo)
+        
+        # 连接撤销/重做信号以更新按钮状态
+        self.scene.undo_stack.can_undo_changed.connect(self.btn_undo.setEnabled)
+        self.scene.undo_stack.can_redo_changed.connect(self.btn_redo.setEnabled)
+        self.scene.undo_stack.stack_changed.connect(self._update_undo_redo_tooltips)
+        
+        # 初始化撤销/重做按钮状态
+        self.btn_undo.setEnabled(self.scene.undo_stack.can_undo())
+        self.btn_redo.setEnabled(self.scene.undo_stack.can_redo())
+        self._update_undo_redo_tooltips()
+        
+        # 其他事件绑定
         self.palette.itemDoubleClicked.connect(self._on_palette_double_clicked)
-        self.palette_search.textChanged.connect(self._filter_palette)
+        self.palette_search.textChanged.connect(self._on_palette_search)
         self.scene.node_selected.connect(self._on_node_selected)
-        self.btn_delete.clicked.connect(self.scene.delete_selected)
-        self.btn_new.clicked.connect(self._new_workflow)
-        self.btn_load_demo.clicked.connect(self._load_demo_workflow)
-        self.btn_clear.clicked.connect(self.scene.clear_all)
-        self.btn_save.clicked.connect(self._save_workflow)
-        self.btn_load.clicked.connect(self._load_workflow)
-        self.btn_export_json.clicked.connect(self._export_json)
-        self.btn_export_py.clicked.connect(self._export_python)
-        self.btn_export_pdf.clicked.connect(self._export_pdf)
-        self.btn_run.clicked.connect(self._run_workflow)
-        self.btn_stop.clicked.connect(self._stop_workflow)
+        self.scene.graph_changed.connect(self._on_graph_changed)
         self.executor.node_started.connect(self._on_exec_node_started)
         self.executor.node_finished.connect(self._on_exec_node_finished)
         self.executor.node_failed.connect(self._on_exec_node_failed)
@@ -169,7 +203,7 @@ class WorkflowTab(QWidget):
             return
         spec = self.registry.get(node_type)
         center_pos = self.canvas.mapToScene(self.canvas.viewport().rect().center())
-        self.scene.add_node(spec.node_type, spec.title, center_pos, params=dict(spec.default_params))
+        self.scene.add_node_with_undo(spec.node_type, spec.title, center_pos, params=dict(spec.default_params))
         self._log(f"已添加节点: {spec.title}")
 
     def _filter_palette(self, keyword):
@@ -251,13 +285,13 @@ class WorkflowTab(QWidget):
 
     def _add_node_at(self, node_type, title, scene_pos):
         spec = self.registry.get(node_type)
-        self.scene.add_node(spec.node_type, title, scene_pos, params=dict(spec.default_params))
+        self.scene.add_node_with_undo(spec.node_type, title, scene_pos, params=dict(spec.default_params))
         self._log(f"已添加节点: {title}")
 
     def _copy_node(self, node_item):
         offset = self.canvas.mapToScene(40, 40) - self.canvas.mapToScene(0, 0)
         pos = node_item.pos() + offset
-        self.scene.add_node(
+        self.scene.add_node_with_undo(
             node_item.model.node_type,
             node_item.model.title,
             pos,
@@ -456,3 +490,78 @@ class WorkflowTab(QWidget):
 
     def _log(self, text):
         logging.info(f"[Workflow] {text}")
+
+    def _on_undo(self):
+        """撤销操作"""
+        if self.scene.undo_stack.can_undo():
+            success = self.scene.undo_stack.undo(self.scene)
+            if success:
+                self._log(f"已撤销: {self.scene.undo_stack.get_undo_description()}")
+            else:
+                self._log("撤销操作失败")
+
+    def _on_redo(self):
+        """重做操作"""
+        if self.scene.undo_stack.can_redo():
+            success = self.scene.undo_stack.redo(self.scene)
+            if success:
+                self._log(f"已重做: {self.scene.undo_stack.get_redo_description()}")
+            else:
+                self._log("重做操作失败")
+
+    def _update_undo_redo_tooltips(self):
+        """更新撤销/重做按钮的工具提示"""
+        if self.scene.undo_stack.can_undo():
+            undo_text = self.scene.undo_stack.get_undo_description()
+            self.btn_undo.setToolTip(f"撤销: {undo_text} (Ctrl+Z)")
+        else:
+            self.btn_undo.setToolTip("撤销 (Ctrl+Z)")
+            
+        if self.scene.undo_stack.can_redo():
+            redo_text = self.scene.undo_stack.get_redo_description()
+            self.btn_redo.setToolTip(f"重做: {redo_text} (Ctrl+Shift+Z)")
+        else:
+            self.btn_redo.setToolTip("重做 (Ctrl+Shift+Z 或 Ctrl+Y)")
+
+    def _on_new(self):
+        self._new_workflow()
+
+    def _on_load_demo(self):
+        self._load_demo_workflow()
+
+    def _on_save(self):
+        self._save_workflow()
+
+    def _on_load(self):
+        self._load_workflow()
+
+    def _on_run(self):
+        self._run_workflow()
+
+    def _on_stop(self):
+        self._stop_workflow()
+
+    def _on_clear(self):
+        self.scene.clear_all()
+        self._log("已清空工作流画布")
+
+    def _on_delete_selected(self):
+        self.scene.delete_selected_with_undo()
+        self._log("已删除选中节点")
+
+    def _on_export_json(self):
+        self._export_json()
+
+    def _on_export_py(self):
+        self._export_python()
+
+    def _on_export_pdf(self):
+        self._export_pdf()
+
+    def _on_palette_search(self):
+        self._filter_palette(self.palette_search.text())
+
+    def _on_graph_changed(self):
+        """工作流图发生变化时的处理"""
+        # 这里可以添加自动保存等功能
+        pass
