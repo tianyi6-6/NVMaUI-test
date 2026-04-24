@@ -12,12 +12,22 @@ tests/
 ├── README.md                # 本文件
 ├── run_tests.py             # 测试运行脚本
 ├── profile_workflow.py      # 性能分析工具
-├── test_node_executors.py   # 节点执行器单元测试
-├── test_node_registry.py    # 节点注册机制测试
-├── test_serialization.py    # 数据序列化测试
-├── test_workflow_integration.py  # 工作流集成测试
-├── test_ui_interaction.py   # UI交互测试
-└── test_performance.py      # 性能测试
+├── unit/                    # 单元测试
+│   ├── __init__.py
+│   ├── test_node_executors.py    # 节点执行器单元测试
+│   ├── test_node_registry.py     # 节点注册机制测试
+│   └── test_serialization.py     # 数据序列化测试
+├── integration/             # 集成测试
+│   ├── __init__.py
+│   ├── test_ui_interaction.py    # UI交互测试
+│   ├── test_workflow_integration.py  # 工作流集成测试
+│   └── test_performance.py       # 性能测试
+└── legacy/                  # 旧版本测试文件
+    ├── __init__.py
+    ├── GUI_test.py
+    ├── Test_SSH_UI.py
+    ├── Test_SSH_UI_Data_Transfer.py
+    └── test_*.py           # 各种临时测试和修复测试
 ```
 
 ## 🚀 快速开始
