@@ -1,0 +1,736 @@
+# 自定义实验 - 节点工作流系统
+
+## 系统概述
+
+本系统提供了一个基于节点的可视化工作流编辑器，用于构建和执行自动化实验流程。用户可以通过拖拽节点、配置参数、连接端口来创建复杂的工作流，实现设备控制、数据采集、数据处理和可视化等功能。
+
+## 功能特性
+
+### 核心功能
+- **可视化节点编辑器**：拖拽式节点编辑，直观构建工作流
+- **参数配置**：节点参数支持多种编辑器（文本、数字、选择、布尔等）
+- **端口连接**：类型安全的端口连接系统，支持数据流传递
+- **实时执行**：工作流实时执行，支持停止和状态监控
+- **实时数据可视化**：采集节点实时更新双图显示面板
+- **可拉伸布局**：工作流双图显示区域支持自由拉伸调整
+
+### 节点分类
+系统提供以下节点分类：
+- **设备管理**：设备选择、设备连接、设备初始化
+- **微波控制**：微波配置、微波读取
+- **全光谱采集**：全光谱采集节点
+- **CW谱采集**：CW谱采集节点
+- **IIR谱采集**：IIR谱采集节点
+- **超声电机**：超声电机状态节点
+- **数据可视化**：数据显示节点
+
+## 系统架构
+
+### 系统架构图
+
+```mermaid
+graph TB
+    subgraph "UI层"
+        WorkflowTab[工作流标签页]
+        CanvasView[画布视图]
+        NodeLibrary[节点库]
+        PlotPanel[双图显示面板]
+    end
+
+    subgraph "编辑层"
+        WorkflowScene[工作流场景]
+        WorkflowNodeItem[节点项]
+        WorkflowEdgeItem[连接项]
+        UndoStack[撤销重做栈]
+    end
+
+    subgraph "模型层"
+        WorkflowGraphModel[图模型]
+        WorkflowNodeModel[节点模型]
+        WorkflowEdgeModel[边模型]
+    end
+
+    subgraph "执行层"
+        WorkflowExecutor[工作流执行器]
+        NodeRegistry[节点注册器]
+    end
+
+    subgraph "节点实现层"
+        DeviceNodes[设备节点]
+        AcquisitionNodes[采集节点]
+        MotorNodes[电机节点]
+        VisualizationNodes[可视化节点]
+    end
+
+    WorkflowTab --> CanvasView
+    WorkflowTab --> NodeLibrary
+    WorkflowTab --> PlotPanel
+    CanvasView --> WorkflowScene
+    WorkflowScene --> WorkflowNodeItem
+    WorkflowScene --> WorkflowEdgeItem
+    WorkflowScene --> UndoStack
+    WorkflowTab --> WorkflowGraphModel
+    WorkflowTab --> WorkflowExecutor
+    WorkflowExecutor --> NodeRegistry
+    NodeRegistry --> DeviceNodes
+    NodeRegistry --> AcquisitionNodes
+    NodeRegistry --> MotorNodes
+    NodeRegistry --> VisualizationNodes
+```
+
+### 工作流执行时序图
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant WorkflowTab as 工作流标签页
+    participant Executor as 执行器
+    participant Scene as 场景
+    participant Node as 节点
+    participant PlotPanel as 显示面板
+
+    User->>WorkflowTab: 点击运行按钮
+    WorkflowTab->>Scene: 构建图模型
+    Scene-->>WorkflowTab: 返回图模型
+    WorkflowTab->>Executor: 执行工作流
+    Executor->>Executor: 拓扑排序
+    loop 按顺序执行节点
+        Executor->>Node: 调用节点执行器
+        Node->>Node: 执行业务逻辑
+        Node-->>Executor: 返回执行结果
+        Executor->>PlotPanel: 实时更新显示
+        Executor-->>WorkflowTab: 发送节点完成信号
+    end
+    Executor-->>WorkflowTab: 发送执行完成信号
+    WorkflowTab-->>User: 显示执行结果
+```
+
+### 核心组件
+
+#### 1. 节点注册系统 (`node_registry.py`)
+定义节点规范和参数规范：
+- `NodeSpec`：节点规范定义
+- `NodePortSpec`：端口规范定义
+- `NodeParamSpec`：参数规范定义
+- `NodeRegistry`：节点注册器
+
+#### 2. 工作流执行引擎 (`engine.py`)
+负责工作流的执行：
+- 拓扑排序算法确保节点按依赖顺序执行
+- 异步执行支持
+- 错误处理和状态反馈
+
+#### 3. 工作流标签页 (`workflow_tab.py`)
+提供工作流编辑和执行界面：
+- 节点库面板
+- 画布编辑器
+- 双图显示面板
+- 控制按钮
+
+#### 4. 画布编辑器 (`canvas.py`)
+提供节点编辑和连接功能：
+- 节点创建、删除、移动
+- 端口连接和断开
+- 参数编辑
+- 参数联动（`on_param_change`回调）
+
+#### 5. 撤销重做系统 (`undo_system.py`)
+实现命令模式的撤销重做功能：
+- `WorkflowCommand`：命令基类
+- `AddNodeCommand`：添加节点命令
+- `DeleteNodesCommand`：删除节点命令
+- `AddEdgeCommand`：添加连接命令
+- `RemoveEdgeCommand`：删除连接命令
+- `MoveNodesCommand`：移动节点命令
+- `WorkflowUndoStack`：撤销重做栈
+
+#### 6. 数据模型 (`models.py`)
+定义工作流数据结构：
+- `WorkflowNodeModel`：节点数据模型
+- `WorkflowEdgeModel`：边数据模型
+- `WorkflowGraphModel`：图数据模型
+
+#### 7. 序列化器 (`serializer.py`)
+提供工作流的序列化和反序列化：
+- `save_workflow`：保存工作流
+- `load_workflow`：加载工作流
+- `export_json`：导出JSON格式
+- `export_python`：导出Python代码
+
+## 核心文件接口和类说明
+
+### 1. 节点注册系统 (`node_registry.py`)
+
+#### 类说明
+
+**`NodePortSpec`**
+- **作用**：定义节点端口规范
+- **属性**：
+  - `name` (str): 端口名称
+  - `data_type` (str): 数据类型（any, float, int, array, bool, trigger）
+
+**`NodeParamSpec`**
+- **作用**：定义节点参数规范
+- **属性**：
+  - `key` (str): 参数键名
+  - `label` (str): 参数显示标签
+  - `editor` (str): 编辑器类型（text, int, float, select, bool, device_param）
+  - `options` (List[str]): 选择项列表
+  - `minimum` (float): 数值最小值
+  - `maximum` (float): 数值最大值
+  - `step` (float): 数值步长
+  - `category` (str): 一级分类
+  - `subcategory` (str): 二级分类
+  - `device_param` (bool): 是否为设备参数
+  - `current_value` (str): 当前值
+  - `valid_range` (str): 合法范围
+  - `unit` (str): 参数单位
+
+**`NodeSpec`**
+- **作用**：定义节点完整规范
+- **属性**：
+  - `node_type` (str): 节点类型标识符
+  - `title` (str): 节点显示标题
+  - `category` (str): 节点分类
+  - `default_params` (Dict[str, object]): 默认参数配置
+  - `input_ports` (List[NodePortSpec]): 输入端口列表
+  - `output_ports` (List[NodePortSpec]): 输出端口列表
+  - `param_specs` (List[NodeParamSpec]): 参数规范列表
+  - `executor` (Callable): 节点执行函数
+  - `on_param_change` (Callable): 参数变化回调函数
+
+**`NodeRegistry`**
+- **作用**：管理所有已注册的节点规范
+- **方法**：
+  - `register(spec: NodeSpec)`: 注册节点规范
+  - `get(node_type: str) -> NodeSpec`: 获取节点规范
+  - `all_specs() -> List[NodeSpec]`: 获取所有节点规范
+  - `grouped() -> Dict[str, List[NodeSpec]]`: 按分类获取节点规范
+
+### 2. 工作流执行引擎 (`engine.py`)
+
+#### 类说明
+
+**`WorkflowExecutor`**
+- **作用**：按照拓扑顺序执行工作流中的所有节点
+- **信号**：
+  - `node_started(str)`: 节点开始执行信号
+  - `node_finished(str, object)`: 节点执行完成信号
+  - `node_failed(str, str)`: 节点执行失败信号
+  - `run_finished`: 工作流执行完成信号
+- **方法**：
+  - `stop()`: 请求停止工作流执行
+  - `run(graph, context)`: 执行工作流
+  - `_topological_order(graph)`: 计算工作流的拓扑排序（静态方法）
+
+### 3. 数据模型 (`models.py`)
+
+#### 类说明
+
+**`WorkflowNodeModel`**
+- **作用**：表示工作流中的单个节点
+- **属性**：
+  - `node_id` (str): 节点唯一标识符
+  - `node_type` (str): 节点类型
+  - `title` (str): 节点显示标题
+  - `position` (Tuple[float, float]): 节点坐标位置
+  - `params` (Dict[str, object]): 节点参数配置
+
+**`WorkflowEdgeModel`**
+- **作用**：表示节点之间的连接关系
+- **属性**：
+  - `from_node` (str): 源节点ID
+  - `to_node` (str): 目标节点ID
+  - `from_port` (str): 源端口名称
+  - `to_port` (str): 目标端口名称
+
+**`WorkflowGraphModel`**
+- **作用**：表示完整的工作流
+- **属性**：
+  - `version` (str): 工作流版本号
+  - `name` (str): 工作流名称
+  - `nodes` (List[WorkflowNodeModel]): 所有节点的列表
+  - `edges` (List[WorkflowEdgeModel]): 所有连接边的列表
+
+### 4. 画布编辑器 (`canvas.py`)
+
+#### 类说明
+
+**`TitleEditEventFilter`**
+- **作用**：标题编辑框的事件过滤器
+- **方法**：
+  - `eventFilter(obj, event)`: 过滤键盘事件（Enter完成，Escape取消）
+
+**`WorkflowNodeItem`**
+- **作用**：工作流节点的可视化表示
+- **主要方法**：
+  - `_build_param_widget()`: 构建参数编辑器
+  - `_rebuild_ports()`: 重新构建端口
+  - `_set_param_value(key, value)`: 设置参数值
+  - `_update_param_editor(key, value)`: 更新参数编辑器
+  - `_start_edit_title()`: 开始编辑标题
+  - `_finish_edit_title()`: 完成编辑标题
+  - `_cancel_edit_title()`: 取消编辑标题
+
+**`WorkflowEdgeItem`**
+- **作用**：节点连接的可视化表示
+- **主要方法**：
+  - `update_position()`: 更新连接位置
+
+**`WorkflowScene`**
+- **作用**：工作流场景，管理所有节点和连接
+- **主要方法**：
+  - `add_node()`: 添加节点
+  - `delete_nodes()`: 删除节点
+  - `add_edge()`: 添加连接
+  - `remove_edge()`: 删除连接
+  - `build_graph()`: 构建图模型
+
+**`WorkflowCanvasView`**
+- **作用**：工作流画布视图
+- **主要方法**：
+  - `wheelEvent(event)`: 处理滚轮缩放
+  - `contextMenuEvent(event)`: 处理右键菜单
+
+### 5. 工作流标签页 (`workflow_tab.py`)
+
+#### 类说明
+
+**`WorkflowTab`**
+- **作用**：工作流编辑和执行界面
+- **主要方法**：
+  - `_build_ui()`: 构建用户界面
+  - `_bind_events()`: 绑定事件
+  - `_on_new()`: 新建工作流
+  - `_on_save()`: 保存工作流
+  - `_on_load()`: 加载工作流
+  - `_on_run()`: 运行工作流
+  - `_on_stop()`: 停止工作流
+  - `_on_clear()`: 清空工作流
+  - `_on_palette_double_clicked()`: 节点库双击事件
+  - `_on_plot_payload()`: 绘图回调
+  - `_apply_plot_mode()`: 应用绘图模式
+  - `_reset_plot_buffers()`: 重置绘图缓冲区
+
+### 6. 撤销重做系统 (`undo_system.py`)
+
+#### 类说明
+
+**`WorkflowCommand`**（抽象基类）
+- **作用**：工作流命令基类
+- **方法**：
+  - `execute(scene)`: 执行命令
+  - `undo(scene)`: 撤销命令
+  - `redo(scene)`: 重做命令
+
+**`AddNodeCommand`**
+- **作用**：添加节点命令
+- **方法**：
+  - `execute(scene)`: 执行添加节点
+  - `undo(scene)`: 撤销添加节点
+  - `redo(scene)`: 重做添加节点
+
+**`DeleteNodesCommand`**
+- **作用**：删除节点命令
+- **方法**：
+  - `execute(scene)`: 执行删除节点
+  - `undo(scene)`: 撤销删除节点
+  - `redo(scene)`: 重做删除节点
+
+**`AddEdgeCommand`**
+- **作用**：添加连接命令
+- **方法**：
+  - `execute(scene)`: 执行添加连接
+  - `undo(scene)`: 撤销添加连接
+  - `redo(scene)`: 重做添加连接
+
+**`RemoveEdgeCommand`**
+- **作用**：删除连接命令
+- **方法**：
+  - `execute(scene)`: 执行删除连接
+  - `undo(scene)`: 撤销删除连接
+  - `redo(scene)`: 重做删除连接
+
+**`MoveNodesCommand`**
+- **作用**：移动节点命令
+- **方法**：
+  - `execute(scene)`: 执行移动节点
+  - `undo(scene)`: 撤销移动节点
+  - `redo(scene)`: 重做移动节点
+
+**`WorkflowUndoStack`**
+- **作用**：撤销重做栈
+- **信号**：
+  - `can_undo_changed`: 可撤销状态改变信号
+  - `can_redo_changed`: 可重做状态改变信号
+  - `stack_changed`: 栈改变信号
+- **主要方法**：
+  - `push(command)`: 推入命令
+  - `undo()`: 撤销
+  - `redo()`: 重做
+  - `can_undo()`: 是否可撤销
+  - `can_redo()`: 是否可重做
+  - `clear()`: 清空栈
+
+### 7. 序列化器 (`serializer.py`)
+
+#### 函数说明
+
+**`save_workflow(graph, file_path)`**
+- **作用**：保存工作流到文件
+- **参数**：
+  - `graph` (WorkflowGraphModel): 工作流图模型
+  - `file_path` (str): 文件路径
+
+**`load_workflow(file_path)`**
+- **作用**：从文件加载工作流
+- **参数**：
+  - `file_path` (str): 文件路径
+- **返回**：WorkflowGraphModel
+
+**`export_json(graph, file_path)`**
+- **作用**：导出工作流为JSON格式
+- **参数**：
+  - `graph` (WorkflowGraphModel): 工作流图模型
+  - `file_path` (str): 文件路径
+
+**`export_python(graph, file_path)`**
+- **作用**：导出工作流为Python代码
+- **参数**：
+  - `graph` (WorkflowGraphModel): 工作流图模型
+  - `file_path` (str): 文件路径
+
+### 8. 内置节点注册 (`builtins.py`)
+
+#### 函数说明
+
+**`register_builtin_nodes(registry)`**
+- **作用**：注册所有内置节点
+- **参数**：
+  - `registry` (NodeRegistry): 节点注册器
+
+## 节点类型详解
+
+#### 设备选择节点 (`device.select`)
+- **功能**：选择设备配置并自动更新相关参数
+- **输入端口**：无
+- **输出端口**：`device_config` (dict) - 设备配置信息
+- **参数**：
+  - `device_name`：设备名称（下拉选择）
+  - `exp_config_path`：实验配置文件路径
+  - `sys_config_path`：系统配置文件路径
+  - `lockin_port`：锁相放大器端口
+  - `ultramotor_port`：超声电机端口
+  - `log_path`：日志文件路径
+- **特性**：设备名称改变时自动更新其他参数
+
+#### 设备连接节点 (`device.connect`)
+- **功能**：连接设备并返回连接状态
+- **输入端口**：无
+- **输出端口**：`device_status` (dict) - 设备连接状态
+- **参数**：无
+
+#### 设备初始化节点 (`device.init`)
+- **功能**：初始化设备参数
+- **输入端口**：`device_config` (dict) - 设备配置
+- **输出端口**：`device` (device) - 设备对象
+- **参数**：包含锁相、激光、微波、存储等所有设备参数
+
+### 微波控制节点
+
+#### 微波配置节点 (`mw.config`)
+- **功能**：配置微波参数
+- **输入端口**：`device_in` (device) - 设备对象
+- **输出端口**：`device_out` (device) - 配置后的设备对象
+- **参数**：微波通道、频率、功率、调频灵敏度等
+
+#### 微波读取节点 (`mw.read`)
+- **功能**：读取微波参数
+- **输入端口**：`device_in` (device) - 设备对象
+- **输出端口**：`data` (dict) - 读取的参数数据
+- **参数**：读取参数选择
+
+### 采集节点
+
+#### 全光谱采集节点 (`all_optical.acquire`)
+- **功能**：全光谱数据采集
+- **输入端口**：`device_in` (device) - 设备对象
+- **输出端口**：`data` (dict) - 采集的数据
+- **参数**：
+  - `start_motor_angle`：起始角度
+  - `stop_motor_angle`：结束角度
+  - `step_motor_angle`：步进角度
+- **实时显示**：采集过程中实时更新双图显示面板
+- **数据格式**：
+  ```python
+  {
+      "data_type": "all_optical",
+      "motor_angle": [...],
+      "fluo_dc": [...],
+      "laser_dc": [...],
+      "point_count": ...
+  }
+  ```
+
+#### CW谱采集节点 (`cw.spectrum_acquire`)
+- **功能**：CW谱数据采集
+- **输入端口**：`device_in` (device) - 设备对象
+- **输出端口**：`data` (dict) - 采集的数据
+- **参数**：
+  - `mw_channel`：微波通道
+  - `start_freq`：起始频率
+  - `stop_freq`：结束频率
+  - `step_freq`：频率步进
+  - `single_point_count`：单点采集数
+- **实时显示**：采集过程中实时更新双图显示面板
+- **数据格式**：
+  ```python
+  {
+      "data_type": "cw",
+      "mw_channel": "...",
+      "mw_freq": [...],
+      "ch1_x": [...],
+      "ch1_y": [...],
+      "ch2_x": [...],
+      "ch2_y": [...],
+      "point_count": ...
+  }
+  ```
+
+#### IIR谱采集节点 (`iir.acquire`)
+- **功能**：IIR谱数据采集
+- **输入端口**：`device_in` (device) - 设备对象
+- **输出端口**：`data` (dict) - 采集的数据
+- **参数**：
+  - `acq_mode`：采集模式（定时长/无限）
+  - `acq_time`：采集时长
+- **实时显示**：采集过程中实时更新双图显示面板（显示最近100个点）
+- **数据格式**：
+  ```python
+  {
+      "data_type": "iir",
+      "time": [...],
+      "ch1": [...],
+      "ch2": [...],
+      "sample_rate": ...,
+      "point_count": ...
+  }
+  ```
+
+### 超声电机节点
+
+#### 超声电机状态节点 (`ultramotor.status`)
+- **功能**：控制超声电机并读取状态
+- **输入端口**：`device_in` (device) - 设备对象
+- **输出端口**：`device_status` (dict) - 电机状态
+- **参数**：
+  - `target_angle`：目标角度
+  - `motor_direction`：转动方向（正转/反转/自动）
+- **数据格式**：
+  ```python
+  {
+      "target_angle": ...,
+      "motor_direction": "...",
+      "current_angle": ...,
+      "is_running": ...
+  }
+  ```
+
+### 数据可视化节点
+
+#### 数据显示节点 (`data.display`)
+- **功能**：将采集数据显示在工作流双图显示面板上
+- **输入端口**：`data_in` (dict) - 输入数据
+- **输出端口**：`status` (dict) - 显示状态
+- **参数**：无
+- **特性**：
+  - 自动识别数据类型（`data_type`字段）
+  - 自动切换到对应标签页
+  - 自动应用对应的显示模式
+- **支持的数据类型**：
+  - `cw`：CW谱数据，切换到CW谱标签页
+  - `all_optical`：全光谱数据，切换到全关谱标签页
+  - `iir`：IIR谱数据，切换到IIR谱标签页
+
+## 使用说明
+
+### 创建工作流
+
+1. **添加节点**：双击左侧节点库中的节点，或拖拽节点到画布
+2. **配置参数**：点击节点，在右侧参数面板中配置参数
+3. **连接节点**：拖拽节点的输出端口到另一个节点的输入端口
+4. **执行工作流**：点击"运行"按钮执行工作流
+5. **停止工作流**：点击"停止"按钮中断执行
+
+### 节点连接规则
+
+- 端口类型必须兼容（如`device`只能连接到`device`输入）
+- 一个输出端口可以连接多个输入端口
+- 不能创建环路（系统会检测并阻止）
+- 连接完成后可以右键点击连线删除
+
+### 参数联动
+
+某些节点支持参数联动，当某个参数改变时自动更新其他参数：
+- **设备选择节点**：改变设备名称时自动更新配置路径、端口等参数
+
+### 实时数据可视化
+
+采集节点支持实时数据可视化：
+- 采集过程中实时更新双图显示面板
+- 可以通过拖动分割条调整上下图表高度
+- 数据可视化节点可以自动识别数据类型并切换显示模式
+
+## 开发指南
+
+### 创建新节点
+
+#### 1. 定义节点规范
+
+在对应的节点文件中定义节点规范：
+
+```python
+from workflow_extension.node_registry import NodeSpec, NodePortSpec, NodeParamSpec
+
+def my_executor(context, node, inputs):
+    # 执行节点逻辑
+    app = context.get("app")
+    # ... 处理逻辑 ...
+    return {"output_key": "output_value"}
+
+def register_my_nodes(registry):
+    registry.register(
+        NodeSpec(
+            node_type="my.node",
+            title="我的节点",
+            category="我的分类",
+            default_params={"param1": "default_value"},
+            input_ports=[NodePortSpec("input_port", "dict")],
+            output_ports=[NodePortSpec("output_port", "dict")],
+            param_specs=[
+                NodeParamSpec("param1", "参数1", editor="text"),
+                NodeParamSpec("param2", "参数2", editor="float", minimum=0.0, maximum=100.0),
+            ],
+            executor=my_executor,
+        )
+    )
+```
+
+#### 2. 注册节点
+
+在 `builtins.py` 中注册节点：
+
+```python
+from workflow_extension.node.my_nodes import register_my_nodes
+register_my_nodes(registry)
+```
+
+#### 3. 实现实时显示（可选）
+
+如果需要实时显示功能，在执行器中添加实时绘图逻辑：
+
+```python
+def my_executor(context, node, inputs):
+    workflow_tab = context.get("workflow_tab")
+    # ... 采集循环 ...
+    if workflow_tab and hasattr(workflow_tab, 'plot_curve_top_main'):
+        workflow_tab._plot_x = np.array([...])
+        workflow_tab._plot_y = np.array([...])
+        workflow_tab.plot_curve_top_main.setData(workflow_tab._plot_x, workflow_tab._plot_y)
+        from PySide6.QtCore import QCoreApplication
+        QCoreApplication.processEvents()
+```
+
+### 参数编辑器类型
+
+支持的参数编辑器：
+- `text`：文本框
+- `int`：整数输入框
+- `float`：浮点数输入框
+- `bool`：复选框
+- `select`：下拉选择框（需要提供`options`参数）
+
+### 端口类型
+
+支持的端口类型：
+- `device`：设备对象
+- `dict`：字典
+- `str`：字符串
+- `any`：任意类型
+- `array`：数组
+- `trigger`：触发信号
+
+## 文件结构
+
+```
+workflow_extension/
+├── README.md                    # 本文档
+├── __init__.py                  # 包初始化
+├── builtins.py                  # 内置节点注册
+├── canvas.py                    # 画布编辑器
+├── engine.py                    # 工作流执行引擎
+├── graph_model.py               # 工作流图模型
+├── node_registry.py             # 节点注册系统
+├── scene.py                     # 工作流场景
+├── workflow_tab.py              # 工作流标签页
+└── node/                        # 节点实现目录
+    ├── all_optical_nodes.py     # 全光谱采集节点
+    ├── cw_nodes.py              # CW谱采集节点
+    ├── data_visualization_nodes.py  # 数据可视化节点
+    ├── device_init_node.py      # 设备初始化节点
+    ├── device_select_nodes.py   # 设备选择节点
+    ├── iir_nodes.py             # IIR谱采集节点
+    └── ultramotor_nodes.py      # 超声电机节点
+```
+
+## 示例工作流
+
+### 示例1：CW谱采集工作流
+
+```
+设备选择 -> 设备初始化 -> 微波配置 -> CW谱采集 -> 数据显示
+```
+
+**步骤**：
+1. 添加"设备选择"节点，选择设备
+2. 添加"设备初始化"节点，连接设备选择输出
+3. 添加"微波配置"节点，配置微波参数
+4. 添加"CW谱采集"节点，设置频率范围
+5. 添加"数据显示"节点，连接CW谱采集输出
+6. 运行工作流，实时查看CW谱数据
+
+### 示例2：全光谱采集工作流
+
+```
+设备选择 -> 设备初始化 -> 全光谱采集 -> 数据显示
+```
+
+**步骤**：
+1. 添加"设备选择"节点，选择设备
+2. 添加"设备初始化"节点，连接设备选择输出
+3. 添加"全光谱采集"节点，设置角度范围
+4. 添加"数据显示"节点，连接全光谱采集输出
+5. 运行工作流，实时查看全光谱数据
+
+## 注意事项
+
+1. **设备连接**：执行工作流前需要先连接设备
+2. **参数配置**：确保所有必要参数都已正确配置
+3. **端口兼容性**：只能连接兼容类型的端口
+4. **环路检测**：工作流不能包含环路
+5. **实时显示**：实时显示可能会影响性能，可以根据需要调整显示频率
+6. **数据类型**：确保数据可视化节点的输入包含`data_type`字段
+
+## 更新日志
+
+### v1.0 (2026-04-29)
+- 初始版本发布
+- 实现基础节点编辑功能
+- 实现设备管理节点
+- 实现采集节点（全光谱、CW谱、IIR谱）
+- 实现超声电机节点
+- 实现数据可视化节点
+- 实现实时数据显示功能
+- 实现可拉伸布局功能
+- 实现参数联动功能
+

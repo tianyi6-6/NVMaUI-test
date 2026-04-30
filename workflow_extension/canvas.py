@@ -72,6 +72,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
         self._input_ports = {}
         self._output_ports = {}
         self._proxy = None
+        self._param_editors = {}  # 存储参数编辑器的引用
         self._min_node_width = 260
         self._min_node_height = 130
         self._max_node_width = 920
@@ -184,7 +185,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
                 main_layout.addLayout(form)
 
             if any(p.device_param for p in specs):
-                apply_btn = QPushButton("应用本节点待应用参数")
+                apply_btn = QPushButton("应用本节点所有参数")
                 apply_btn.setStyleSheet(
                     "QPushButton { background: #2f7fd9; color: white; border: 1px solid #2b74c7; padding: 4px 10px; border-radius: 4px; }"
                     "QPushButton:hover { background: #3b8cea; }"
@@ -321,24 +322,30 @@ class WorkflowNodeItem(QGraphicsRectItem):
             # 布尔参数
             editor = QCheckBox()
             editor.setChecked(bool(current))
+            editor._param_key = p.key  # 存储参数键以便后续查找
             editor.toggled.connect(lambda v, key=p.key: self._set_param_value(key, v))
             form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
         elif p.editor == "select":
             # 下拉选择
             editor = QComboBox()
             editor.addItems([str(x) for x in p.options])
             idx = editor.findText(str(current))
             editor.setCurrentIndex(max(idx, 0))
+            editor._param_key = p.key  # 存储参数键以便后续查找
             editor.currentTextChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
             form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
         elif p.editor == "int":
             # 整数输入
             editor = QSpinBox()
             editor.setRange(int(p.minimum), int(p.maximum))
             editor.setSingleStep(int(max(1, p.step)))
             editor.setValue(int(current) if current else 0)
+            editor._param_key = p.key  # 存储参数键以便后续查找
             editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
             form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
         elif p.editor == "float":
             # 浮点数输入
             editor = QDoubleSpinBox()
@@ -346,15 +353,19 @@ class WorkflowNodeItem(QGraphicsRectItem):
             editor.setRange(float(p.minimum), float(p.maximum))
             editor.setSingleStep(float(p.step))
             editor.setValue(float(current) if current else 0.0)
+            editor._param_key = p.key  # 存储参数键以便后续查找
             editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
             form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
         else:
             # 文本输入
             editor = QLineEdit(str(current))
+            editor._param_key = p.key  # 存储参数键以便后续查找
             editor.editingFinished.connect(
                 lambda e=editor, key=p.key: self._set_param_value(key, e.text().strip())
             )
             form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
 
     @staticmethod
     def _extract_numeric(value, default=0.0):
@@ -429,8 +440,37 @@ class WorkflowNodeItem(QGraphicsRectItem):
 
     def _set_param_value(self, key, value):
         self.model.params[key] = value
+
+        # 处理参数依赖
+        if self.spec and hasattr(self.spec, 'on_param_change'):
+            if self.spec.on_param_change:
+                updates = self.spec.on_param_change(key, value, self.model.params)
+                if updates:
+                    for update_key, update_value in updates.items():
+                        if update_key != key:  # 避免循环更新
+                            self.model.params[update_key] = update_value
+                            # 更新UI中的对应编辑器
+                            self._update_param_editor(update_key, update_value)
+
         if self._on_param_changed:
             self._on_param_changed(self.model)
+
+    def _update_param_editor(self, key, value):
+        """更新UI中指定参数的编辑器值"""
+        # 从存储的编辑器字典中查找并更新
+        if key in self._param_editors:
+            widget = self._param_editors[key]
+            if isinstance(widget, QLineEdit):
+                widget.setText(str(value))
+            elif isinstance(widget, QSpinBox):
+                widget.setValue(int(value))
+            elif isinstance(widget, QDoubleSpinBox):
+                widget.setValue(float(value))
+            elif isinstance(widget, QComboBox):
+                idx = widget.findText(str(value))
+                widget.setCurrentIndex(max(idx, 0))
+            elif isinstance(widget, QCheckBox):
+                widget.setChecked(bool(value))
 
     def _apply_device_pending_params(self):
         """将本节点设备参数的设置值应用为当前值。"""

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QTabWidget,
     QPushButton,
     QMenu,
     QSplitter,
@@ -32,9 +33,10 @@ from workflow_extension.serializer import export_json, export_python, load_workf
 
 
 class WorkflowTab(QWidget):
-    def __init__(self, app_context=None, parent=None):
+    def __init__(self, app_context=None, parent=None, enable_extended_node_ui=False):
         super().__init__(parent)
         self.app_context = app_context
+        self.enable_extended_node_ui = bool(enable_extended_node_ui)
         self.registry = NodeRegistry()
         register_builtin_nodes(self.registry)
         self.executor = WorkflowExecutor(self.registry, self)
@@ -42,6 +44,10 @@ class WorkflowTab(QWidget):
         self._plot_x = []
         self._plot_y = []
         self._plot_y_ref = []
+        self._plot_upper_aux = []
+        self._plot_lower_main = []
+        self._plot_lower_aux = []
+        self._plot_mode = "cw"
         self._prop_editors = {}
         self._selected_node = None
         self._build_ui()
@@ -53,7 +59,6 @@ class WorkflowTab(QWidget):
         
         # 基本操作按钮
         self.btn_new = QPushButton("新建")
-        self.btn_load_demo = QPushButton("加载Demo流程")
         self.btn_save = QPushButton("保存")
         self.btn_load = QPushButton("加载")
         
@@ -77,7 +82,6 @@ class WorkflowTab(QWidget):
         # 添加按钮到工具栏
         for btn in [
             self.btn_new,
-            self.btn_load_demo,
             self.btn_save,
             self.btn_load,
             self.btn_undo,
@@ -125,7 +129,7 @@ class WorkflowTab(QWidget):
 
         center = QWidget()
         center_layout = QVBoxLayout(center)
-        self.scene = WorkflowScene(self)
+        self.scene = WorkflowScene(self, enable_extended_node_ui=self.enable_extended_node_ui)
         self.scene.set_spec_resolver(self.registry.get)
         self.scene.on_node_param_changed = self._on_node_inline_params_changed
         self.canvas = WorkflowCanvasView(self.scene, self)
@@ -136,33 +140,42 @@ class WorkflowTab(QWidget):
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
-        self.selected_node_label = QLabel("当前节点：无")
-        right_layout.addWidget(self.selected_node_label)
-        self.right_splitter = QSplitter(Qt.Vertical)
-        self.property_group = QGroupBox("节点属性")
-        self.property_form = QFormLayout(self.property_group)
-        self.plot_group = QGroupBox("工作流流式绘图")
+        self.plot_group = QGroupBox("工作流双图显示")
         plot_layout = QVBoxLayout(self.plot_group)
-        self.plot_widget = pg.PlotWidget()
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.2)
-        self.plot_widget.addLegend()
-        self.plot_curve = self.plot_widget.plot(pen=pg.mkPen("#f6d04d", width=2), name="测量值")
-        self.plot_curve_ref = self.plot_widget.plot(pen=pg.mkPen("#4aa3ff", width=1.6, style=Qt.DashLine), name="目标值")
-        self.plot_widget.setLabel("left", "Value")
-        self.plot_widget.setLabel("bottom", "Time / Angle")
-        plot_layout.addWidget(self.plot_widget)
-        self.right_splitter.addWidget(self.property_group)
-        self.right_splitter.addWidget(self.plot_group)
-        self.right_splitter.setSizes([220, 320])
-        right_layout.addWidget(self.right_splitter, 1)
+        self.tab_widget = QTabWidget()
+        self.tab_widget.addTab(QWidget(), "全关谱")
+        self.tab_widget.addTab(QWidget(), "CW谱")
+        self.tab_widget.addTab(QWidget(), "IIR谱")
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
+        plot_layout.addWidget(self.tab_widget)
+        
+        # 添加垂直分割器，使两个图表可以自由拉伸
+        plot_splitter = QSplitter(Qt.Vertical)
+        self.plot_widget_top = pg.PlotWidget()
+        self.plot_widget_bottom = pg.PlotWidget()
+        self.plot_widget_top.showGrid(x=True, y=True, alpha=0.2)
+        self.plot_widget_bottom.showGrid(x=True, y=True, alpha=0.2)
+        self.plot_widget_top.addLegend()
+        self.plot_widget_bottom.addLegend()
+        self.plot_curve_top_main = self.plot_widget_top.plot(pen=pg.mkPen("#3b82f6", width=2), name="CH1-X")
+        self.plot_curve_top_aux = self.plot_widget_top.plot(pen=pg.mkPen("#ef4444", width=1.8), name="CH1-Y")
+        self.plot_curve_bottom_main = self.plot_widget_bottom.plot(pen=pg.mkPen("#eab308", width=2), name="CH2-X")
+        self.plot_curve_bottom_aux = self.plot_widget_bottom.plot(pen=pg.mkPen("#22c55e", width=1.8), name="CH2-Y")
+        plot_splitter.addWidget(self.plot_widget_top)
+        plot_splitter.addWidget(self.plot_widget_bottom)
+        plot_splitter.setSizes([300, 300])  # 初始高度分配
+        plot_layout.addWidget(plot_splitter, 1)
+        
+        right_layout.addWidget(self.plot_group, 1)
         splitter.addWidget(right)
 
         splitter.setSizes([220, 860, 320])
+        self.tab_widget.setCurrentIndex(1)
+        self._apply_plot_mode("cw")
 
     def _bind_events(self):
         # 基本事件绑定
         self.btn_new.clicked.connect(self._on_new)
-        self.btn_load_demo.clicked.connect(self._on_load_demo)
         self.btn_save.clicked.connect(self._on_save)
         self.btn_load.clicked.connect(self._on_load)
         self.btn_run.clicked.connect(self._on_run)
@@ -225,17 +238,7 @@ class WorkflowTab(QWidget):
 
     def _on_node_selected(self, node_model):
         self._selected_node = node_model
-        self.selected_node_label.setText(f"当前节点：{node_model.title} ({node_model.node_id})")
-        while self.property_form.rowCount() > 0:
-            self.property_form.removeRow(0)
         self._prop_editors = {}
-        for key, value in node_model.params.items():
-            editor = QLineEdit(str(value))
-            editor.editingFinished.connect(self._persist_node_params)
-            self._prop_editors[key] = editor
-            self.property_form.addRow(key, editor)
-        if not node_model.params:
-            self.property_form.addRow(QLabel("该节点无可配置参数"))
 
     def _persist_node_params(self):
         if not self._selected_node:
@@ -326,62 +329,9 @@ class WorkflowTab(QWidget):
     def _new_workflow(self):
         self.scene.clear_all()
         self._latest_results = {}
-        self._plot_x = []
-        self._plot_y = []
-        self._plot_y_ref = []
-        self.plot_curve.setData([], [])
-        self.plot_curve_ref.setData([], [])
+        self._reset_plot_buffers()
         self._log("已新建空白工作流。")
 
-    def _load_demo_workflow(self):
-        graph = WorkflowGraphModel(name="双路锁相流程 Demo")
-        nodes = [
-            ("n_start", "demo.start", "开始", (60, 100)),
-            ("n_init", "demo.init_device", "初始化设备", (360, 100)),
-            ("n_coarse", "demo.coarse_scan", "全光谱扫描", (660, 100)),
-            ("n_left", "demo.define_left", "定义左侧角度区间", (960, 20)),
-            ("n_left_scan", "demo.left_fine_scan", "执行左区精扫", (1260, 20)),
-            ("n_right", "demo.define_right", "定义右侧角度区间", (960, 190)),
-            ("n_right_scan", "demo.right_fine_scan", "执行右区精扫", (1260, 190)),
-            ("n_pick", "demo.select_region", "确认最优角度", (1560, 100)),
-            ("n_freq", "demo.compute_work_freq", "计算工作点频率", (1860, 100)),
-            ("n_apply", "demo.apply_work_freq", "设置双路微波并采集", (2160, 100)),
-            ("n_monitor", "demo.monitor_drift", "观测误差数据", (2460, 100)),
-        ]
-        for node_id, node_type, title, pos in nodes:
-            spec = self.registry.get(node_type)
-            graph.nodes.append(
-                WorkflowNodeModel(
-                    node_id=node_id,
-                    node_type=node_type,
-                    title=title,
-                    position=pos,
-                    params=dict(spec.default_params),
-                )
-            )
-        graph.edges.extend(
-            [
-                WorkflowEdgeModel("n_start", "n_init", "ctx_out", "ctx_in"),
-                WorkflowEdgeModel("n_init", "n_coarse", "ctx_out", "ctx_in"),
-                WorkflowEdgeModel("n_coarse", "n_left", "scan_out", "scan_in"),
-                WorkflowEdgeModel("n_left", "n_left_scan", "left_out", "range_in"),
-                WorkflowEdgeModel("n_coarse", "n_right", "scan_out", "scan_in"),
-                WorkflowEdgeModel("n_right", "n_right_scan", "right_out", "range_in"),
-                WorkflowEdgeModel("n_left_scan", "n_pick", "result_out", "left_in"),
-                WorkflowEdgeModel("n_right_scan", "n_pick", "result_out", "right_in"),
-                WorkflowEdgeModel("n_pick", "n_freq", "best_out", "best_in"),
-                WorkflowEdgeModel("n_freq", "n_apply", "freq_out", "freq_in"),
-                WorkflowEdgeModel("n_apply", "n_monitor", "state_out", "state_in"),
-            ]
-        )
-        self.scene.load_graph(graph)
-        self._latest_results = {}
-        self._plot_x = []
-        self._plot_y = []
-        self._plot_y_ref = []
-        self.plot_curve.setData([], [])
-        self.plot_curve_ref.setData([], [])
-        self._log("已加载流程 Demo，可直接点击运行。")
 
     def _save_workflow(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "保存工作流", "", "NVM Workflow (*.nvm_workflow)")
@@ -437,14 +387,15 @@ class WorkflowTab(QWidget):
         if not graph.nodes:
             QMessageBox.warning(self, "提示", "当前工作流为空。")
             return
+        app_context = self.app_context or self.parent()
+        if app_context is None:
+            QMessageBox.warning(self, "提示", "未找到主程序上下文，无法执行需要设备的工作流。")
+            self._log("未找到主程序上下文，无法执行需要设备的工作流。")
+            return
         self._latest_results = {}
-        self._plot_x = []
-        self._plot_y = []
-        self._plot_y_ref = []
-        self.plot_curve.setData([], [])
-        self.plot_curve_ref.setData([], [])
+        self._reset_plot_buffers()
         self._log("开始执行工作流。")
-        context = {"app": self.app_context, "plot_callback": self._on_plot_payload}
+        context = {"app": app_context, "plot_callback": self._on_plot_payload, "workflow_tab": self}
         self.executor.run(graph, context)
 
     def _stop_workflow(self):
@@ -462,6 +413,7 @@ class WorkflowTab(QWidget):
         if isinstance(item, WorkflowNodeItem):
             item.setBrush(pg.mkBrush("#2a7d46"))
         self._latest_results[node_id] = result
+        self._sync_plot_from_result(result)
         self._log(f"[OK] {node_id} -> {result}")
 
     def _on_exec_node_failed(self, node_id, err):
@@ -481,12 +433,97 @@ class WorkflowTab(QWidget):
             return
         self._plot_x.append(x)
         self._plot_y.append(float("nan") if y is None else y)
-        self._plot_y_ref.append(float("nan") if y2 is None else y2)
+        self._plot_lower_main.append(float("nan") if y2 is None else y2)
         self._plot_x = self._plot_x[-1200:]
         self._plot_y = self._plot_y[-1200:]
-        self._plot_y_ref = self._plot_y_ref[-1200:]
-        self.plot_curve.setData(self._plot_x, self._plot_y)
-        self.plot_curve_ref.setData(self._plot_x, self._plot_y_ref)
+        self._plot_lower_main = self._plot_lower_main[-1200:]
+        self.plot_curve_top_main.setData(self._plot_x, self._plot_y)
+        self.plot_curve_bottom_main.setData(self._plot_x, self._plot_lower_main)
+
+    def _reset_plot_buffers(self):
+        self._plot_x = []
+        self._plot_y = []
+        self._plot_y_ref = []
+        self._plot_upper_aux = []
+        self._plot_lower_main = []
+        self._plot_lower_aux = []
+        self.plot_curve_top_main.setData([], [])
+        self.plot_curve_top_aux.setData([], [])
+        self.plot_curve_bottom_main.setData([], [])
+        self.plot_curve_bottom_aux.setData([], [])
+
+    def _set_plot_titles_and_labels(self, top_title, bottom_title, bottom_axis_label):
+        self.plot_widget_top.setTitle(top_title)
+        self.plot_widget_bottom.setTitle(bottom_title)
+        self.plot_widget_top.setLabel("left", "Voltage", units="V")
+        self.plot_widget_bottom.setLabel("left", "Voltage", units="V")
+        self.plot_widget_top.setLabel("bottom", bottom_axis_label)
+        self.plot_widget_bottom.setLabel("bottom", bottom_axis_label)
+
+    def _on_tab_changed(self, index):
+        if index == 0:
+            self._apply_plot_mode("all_optical")
+        elif index == 1:
+            self._apply_plot_mode("cw")
+        elif index == 2:
+            self._apply_plot_mode("iir")
+
+    def _apply_plot_mode(self, mode):
+        self._plot_mode = mode
+        index_map = {"all_optical": 0, "cw": 1, "iir": 2}
+        if mode in index_map:
+            self.tab_widget.blockSignals(True)
+            self.tab_widget.setCurrentIndex(index_map[mode])
+            self.tab_widget.blockSignals(False)
+        if mode == "all_optical":
+            self._set_plot_titles_and_labels("CH1 荧光路 直流信号", "CH2 激光路 直流信号", "Motor Angle")
+            self.plot_curve_top_aux.setVisible(False)
+            self.plot_curve_bottom_aux.setVisible(False)
+        elif mode == "iir":
+            self._set_plot_titles_and_labels("CH1 IIR通道时域波形", "CH2 IIR通道时域波形", "Time")
+            self.plot_curve_top_aux.setVisible(False)
+            self.plot_curve_bottom_aux.setVisible(False)
+        else:
+            self._set_plot_titles_and_labels("CH1 CW谱", "CH2 CW谱", "Frequency")
+            self.plot_curve_top_aux.setVisible(True)
+            self.plot_curve_bottom_aux.setVisible(True)
+        self._refresh_plot_curves()
+
+    def _sync_plot_from_result(self, result):
+        if not isinstance(result, dict):
+            return
+        if {"mw_freq", "ch1_x", "ch1_y", "ch2_x", "ch2_y"}.issubset(result.keys()):
+            self._apply_plot_mode("cw")
+            self._plot_x = list(result.get("mw_freq", []))[-1200:]
+            self._plot_y = list(result.get("ch1_x", []))[-1200:]
+            self._plot_upper_aux = list(result.get("ch1_y", []))[-1200:]
+            self._plot_lower_main = list(result.get("ch2_x", []))[-1200:]
+            self._plot_lower_aux = list(result.get("ch2_y", []))[-1200:]
+            self._refresh_plot_curves()
+            return
+        if {"motor_angle", "fluo_dc", "laser_dc"}.issubset(result.keys()):
+            self._apply_plot_mode("all_optical")
+            self._plot_x = list(result.get("motor_angle", []))[-1200:]
+            self._plot_y = list(result.get("fluo_dc", []))[-1200:]
+            self._plot_lower_main = list(result.get("laser_dc", []))[-1200:]
+            self._plot_upper_aux = []
+            self._plot_lower_aux = []
+            self._refresh_plot_curves()
+            return
+        if {"ch1", "ch2", "time"}.issubset(result.keys()):
+            self._apply_plot_mode("iir")
+            self._plot_x = list(result.get("time", []))[-1200:]
+            self._plot_y = list(result.get("ch1", []))[-1200:]
+            self._plot_lower_main = list(result.get("ch2", []))[-1200:]
+            self._plot_upper_aux = []
+            self._plot_lower_aux = []
+            self._refresh_plot_curves()
+
+    def _refresh_plot_curves(self):
+        self.plot_curve_top_main.setData(self._plot_x, self._plot_y)
+        self.plot_curve_top_aux.setData(self._plot_x, self._plot_upper_aux)
+        self.plot_curve_bottom_main.setData(self._plot_x, self._plot_lower_main)
+        self.plot_curve_bottom_aux.setData(self._plot_x, self._plot_lower_aux)
 
     def _log(self, text):
         logging.info(f"[Workflow] {text}")
@@ -543,6 +580,7 @@ class WorkflowTab(QWidget):
 
     def _on_clear(self):
         self.scene.clear_all()
+        self._reset_plot_buffers()
         self._log("已清空工作流画布")
 
     def _on_delete_selected(self):

@@ -33,6 +33,7 @@ def _exec_all_optical_acquire(context, node, inputs):
         fluo_dc_list = []
         laser_dc_list = []
         callback = context.get("plot_callback")
+        workflow_tab = context.get("workflow_tab")
 
         speed = 100
         current_motor_angle = start_motor_angle
@@ -62,6 +63,19 @@ def _exec_all_optical_acquire(context, node, inputs):
             if callback:
                 callback({"x": real_motor_angle, "y": fluo_dc, "y2": laser_dc})
 
+            # 实时更新工作流双图显示
+            if workflow_tab and hasattr(workflow_tab, 'plot_curve_top_main'):
+                workflow_tab._plot_x = np.array([real_motor_angle])
+                workflow_tab._plot_y = np.array([fluo_dc])
+                workflow_tab._plot_lower_main = np.array([laser_dc])
+                workflow_tab._plot_upper_aux = np.array([])
+                workflow_tab._plot_lower_aux = np.array([])
+                workflow_tab.plot_curve_top_main.setData(workflow_tab._plot_x, workflow_tab._plot_y)
+                workflow_tab.plot_curve_bottom_main.setData(workflow_tab._plot_x, workflow_tab._plot_lower_main)
+                # 处理UI事件，保持界面响应
+                from PySide6.QtCore import QCoreApplication
+                QCoreApplication.processEvents()
+
             current_motor_angle += step_motor_angle
 
         logging.info(
@@ -70,6 +84,7 @@ def _exec_all_optical_acquire(context, node, inputs):
         )
 
         return {
+            "data_type": "all_optical",
             "motor_angle": motor_angle_list,
             "fluo_dc": fluo_dc_list,
             "laser_dc": laser_dc_list,
@@ -92,11 +107,9 @@ def register_all_optical_nodes(registry):
                 "stop_motor_angle": 359.9,
                 "step_motor_angle": 2.0
             },
-            input_ports=[NodePortSpec("device_in", "device"), NodePortSpec("trigger", "trigger"), NodePortSpec("data_in", "any")],
+            input_ports=[NodePortSpec("device_in", "device")],
             output_ports=[
-                NodePortSpec("motor_angle", "array"),
-                NodePortSpec("fluo_dc", "array"),
-                NodePortSpec("laser_dc", "array")
+                NodePortSpec("data", "dict")
             ],
             param_specs=[
                 NodeParamSpec("start_motor_angle", "起始角度(°)", editor="float", minimum=0.0, maximum=360.0, step=0.1),

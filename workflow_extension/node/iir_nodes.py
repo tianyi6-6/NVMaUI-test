@@ -36,6 +36,7 @@ def _exec_iir_acquire(context, node, inputs):
         ch1_data = []
         ch2_data = []
         callback = context.get("plot_callback")
+        workflow_tab = context.get("workflow_tab")
 
         init_start_time = time.time()
         N = 0
@@ -74,6 +75,19 @@ def _exec_iir_acquire(context, node, inputs):
                     if callback and len(time_data) > 0:
                         callback({"x": time_data[-1], "y": ch1_data[-1], "y2": ch2_data[-1]})
 
+                    # 实时更新工作流双图显示
+                    if workflow_tab and hasattr(workflow_tab, 'plot_curve_top_main'):
+                        workflow_tab._plot_x = np.array(time_data[-100:])  # 显示最近100个点
+                        workflow_tab._plot_y = np.array(ch1_data[-100:])
+                        workflow_tab._plot_lower_main = np.array(ch2_data[-100:])
+                        workflow_tab._plot_upper_aux = np.array([])
+                        workflow_tab._plot_lower_aux = np.array([])
+                        workflow_tab.plot_curve_top_main.setData(workflow_tab._plot_x, workflow_tab._plot_y)
+                        workflow_tab.plot_curve_bottom_main.setData(workflow_tab._plot_x, workflow_tab._plot_lower_main)
+                        # 处理UI事件，保持界面响应
+                        from PySide6.QtCore import QCoreApplication
+                        QCoreApplication.processEvents()
+
             else:
                 while True:
                     try:
@@ -101,6 +115,19 @@ def _exec_iir_acquire(context, node, inputs):
                     if callback and len(time_data) > 0:
                         callback({"x": time_data[-1], "y": ch1_data[-1], "y2": ch2_data[-1]})
 
+                    # 实时更新工作流双图显示
+                    if workflow_tab and hasattr(workflow_tab, 'plot_curve_top_main'):
+                        workflow_tab._plot_x = np.array(time_data[-100:])  # 显示最近100个点
+                        workflow_tab._plot_y = np.array(ch1_data[-100:])
+                        workflow_tab._plot_lower_main = np.array(ch2_data[-100:])
+                        workflow_tab._plot_upper_aux = np.array([])
+                        workflow_tab._plot_lower_aux = np.array([])
+                        workflow_tab.plot_curve_top_main.setData(workflow_tab._plot_x, workflow_tab._plot_y)
+                        workflow_tab.plot_curve_bottom_main.setData(workflow_tab._plot_x, workflow_tab._plot_lower_main)
+                        # 处理UI事件，保持界面响应
+                        from PySide6.QtCore import QCoreApplication
+                        QCoreApplication.processEvents()
+
                     if not context.get("running", True):
                         break
         finally:
@@ -111,6 +138,7 @@ def _exec_iir_acquire(context, node, inputs):
         )
 
         return {
+            "data_type": "iir",
             "time": time_data,
             "ch1": ch1_data,
             "ch2": ch2_data,
@@ -136,11 +164,9 @@ def register_iir_nodes(registry):
                 "trend_remove_mode": "关闭",
                 "realtime_filter_enabled": False
             },
-            input_ports=[NodePortSpec("device_in", "device"), NodePortSpec("trigger", "trigger"), NodePortSpec("data_in", "any")],
+            input_ports=[NodePortSpec("device_in", "device")],
             output_ports=[
-                NodePortSpec("time", "array"),
-                NodePortSpec("ch1", "array"),
-                NodePortSpec("ch2", "array")
+                NodePortSpec("data", "dict")
             ],
             param_specs=[
                 NodeParamSpec("acq_time", "采集时长(秒)", editor="float", minimum=0.1, maximum=10000.0, step=0.1),

@@ -18,12 +18,9 @@ def _exec_ultramotor_status(context, node, inputs):
         if not hasattr(app, "ultramotor"):
             raise ValueError("应用上下文缺少 ultramotor 接口，无法执行超声电机状态读取")
 
-        motor_speed = int(node.params.get("motor_speed", 1000))
         target_angle = float(node.params.get("target_angle", 0.0))
         motor_direction = str(node.params.get("motor_direction", "正转"))
 
-        if motor_speed < 0 or motor_speed > 10000:
-            raise ValueError("超声电机转速必须在0-10000范围内")
         if target_angle < 0.0 or target_angle > 360.0:
             raise ValueError("超声电机角度必须在0-360度范围内")
 
@@ -40,8 +37,8 @@ def _exec_ultramotor_status(context, node, inputs):
             forward_angle = (current_angle - target_angle) % 360
             direction_flag = forward_angle > 180
 
-        # 旋转电机到目标角度
-        app.ultramotor.rotate_motor(motor_speed, target_angle, direction=direction_flag)
+        # 旋转电机到目标角度（使用默认转速1000rpm）
+        app.ultramotor.rotate_motor(1000, target_angle, direction=direction_flag)
 
         # 等待电机停止
         while app.ultramotor.is_run():
@@ -56,12 +53,11 @@ def _exec_ultramotor_status(context, node, inputs):
         app.ultramotor.update_status()
 
         logging.info(
-            f"超声电机状态: 转速={motor_speed}rpm, 目标角度={target_angle}°, 转动方向={motor_direction}, "
+            f"超声电机状态: 目标角度={target_angle}°, 转动方向={motor_direction}, "
             f"当前角度={final_angle}°, 运行状态={'运行中' if is_running else '停止'}"
         )
 
         return {
-            "motor_speed": motor_speed,
             "target_angle": target_angle,
             "motor_direction": motor_direction,
             "current_angle": final_angle,
@@ -80,19 +76,14 @@ def register_ultramotor_nodes(registry):
             title="超声电机状态",
             category="设备",
             default_params={
-                "motor_speed": 1000,
                 "target_angle": 0.0,
                 "motor_direction": "正转"
             },
-            input_ports=[NodePortSpec("device_in", "device"), NodePortSpec("trigger", "trigger")],
+            input_ports=[NodePortSpec("device_in", "device")],
             output_ports=[
-                NodePortSpec("current_angle", "float"),
-                NodePortSpec("is_running", "bool"),
-                NodePortSpec("motor_speed", "int"),
-                NodePortSpec("motor_direction", "str")
+                NodePortSpec("device_status", "dict")
             ],
             param_specs=[
-                NodeParamSpec("motor_speed", "超声电机转速(rpm)", editor="int", minimum=0, maximum=10000, step=100),
                 NodeParamSpec("target_angle", "设置超声电机角度(°)", editor="float", minimum=0.0, maximum=360.0, step=0.1),
                 NodeParamSpec("motor_direction", "转动方向", editor="select", options=["正转", "反转", "自动"]),
             ],

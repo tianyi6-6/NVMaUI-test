@@ -120,8 +120,7 @@ class ExperimentApp(QWidget):
         self.save_dir = self.sys_config.get('Path', 'local_data_path') + '/' + time.strftime('%Y%m%d',
                                                                                              time.localtime(
                                                                                                  time.time())) + '/'
-        if not os.path.exists(self.sys_config.get('Path', 'local_data_path')):
-            os.mkdir(self.sys_config.get('Path', 'local_data_path'))
+        os.makedirs(self.sys_config.get('Path', 'local_data_path'), exist_ok=True)
         create_dir(self.save_dir)
 
         self.save_dir_laser_phase = self.save_dir + 'Laser_Phase_Optimization'
@@ -194,7 +193,7 @@ class ExperimentApp(QWidget):
         self.tabs.addTab(self.ultra_cw_panel, "全光谱数据采集")
         self.tabs.addTab(self.pid_panel, "PID控制模式")
         self.tabs.addTab(self.laser_phase_optimization_panel, "激光解调相消相位优化")
-        self.workflow_tab = WorkflowTab(app_context=self, parent=self)
+        self.workflow_tab = WorkflowTab(app_context=self, parent=self, enable_extended_node_ui=True)
         self.tabs.addTab(self.workflow_tab, "自定义实验-节点工作流")
         main_layout.addWidget(self.tabs)
 

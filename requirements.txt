@@ -8,3 +8,6 @@ ctypes; platform_system=="Windows"
 libusb1>=2.0.0; platform_system!="Windows"
 pyinstaller>=6.0.0
 pillow>=10.0.0 
+PySide6>=6.5.0
+matplotlib>=3.7.0
+numpy>=1.24.0 

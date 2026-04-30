@@ -28,26 +28,30 @@ from workflow_extension.node_registry import NodeParamSpec, NodePortSpec, NodeRe
 
 
 def register_builtin_nodes(registry: NodeRegistry):
+    # 注册设备选择节点
+    from workflow_extension.node.device_select_nodes import register_device_select_nodes
+    register_device_select_nodes(registry)
+
     # 注册初始化设备节点
-    from workflow_extension.device_init_node import register_device_init_nodes
+    from workflow_extension.node.device_init_node import register_device_init_nodes
     register_device_init_nodes(registry)
 
     # 注册CW谱数据采集节点
-    from workflow_extension.cw_nodes import register_cw_nodes
+    from workflow_extension.node.cw_nodes import register_cw_nodes
     register_cw_nodes(registry)
 
     # 注册全光谱数据采集节点
-    from workflow_extension.all_optical_nodes import register_all_optical_nodes
+    from workflow_extension.node.all_optical_nodes import register_all_optical_nodes
     register_all_optical_nodes(registry)
 
     # 注册IIR谱数据采集节点
-    from workflow_extension.iir_nodes import register_iir_nodes
+    from workflow_extension.node.iir_nodes import register_iir_nodes
     register_iir_nodes(registry)
 
     # 注册超声电机状态节点
-    from workflow_extension.ultramotor_nodes import register_ultramotor_nodes
+    from workflow_extension.node.ultramotor_nodes import register_ultramotor_nodes
     register_ultramotor_nodes(registry)
 
-    # 注册设备选择节点
-    from workflow_extension.device_select_nodes import register_device_select_nodes
-    register_device_select_nodes(registry)
+    # 注册数据可视化节点
+    from workflow_extension.node.data_visualization_nodes import register_data_visualization_nodes
+    register_data_visualization_nodes(registry)
