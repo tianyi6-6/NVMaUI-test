@@ -76,6 +76,107 @@ graph TB
     NodeRegistry --> VisualizationNodes
 ```
 
+### 数据传输层次结构
+
+workflow_extension自定义实验-节点工作流系统采用分层架构进行数据传输，各层职责清晰：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. UI显示层 (workflow_tab.py + pyqtgraph)                   │
+│     - 负责数据可视化渲染                                      │
+│     - 提供用户交互界面                                        │
+│     - 接收工作流执行结果并显示                                │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  2. 工作流层 (workflow_extension)                            │
+│     - WorkflowExecutor: 节点执行引擎，拓扑排序                │
+│     - 节点执行器: 调用设备接口获取数据                        │
+│     - 端口连接: 节点间数据传递                                │
+│     - 数据模型: WorkflowNodeModel, WorkflowEdgeModel          │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  3. Python封装层 (manager.py + interface/)                   │
+│     - manager.py: 设备管理器，统一设备接口                    │
+│     - interface/: 各种设备的Python驱动封装                    │
+│     - ctypes/FFI: Python与C库互操作                         │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  4. C/C++驱动层 (DLL/SO动态链接库)                            │
+│     - USBAPI_x64.dll: USB通信驱动                            │
+│     - libusb-1.0.dll: USB协议栈                              │
+│     - 厂商SDK: 硬件厂商提供的C/C++开发包                       │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  5. 硬件设备层                                                │
+│     - 锁相放大器 (LIA_Mini_DoubleMW)                          │
+│     - 微波源                                                 │
+│     - 超声电机 (USM20)                                       │
+│     - 激光器                                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**各层详细说明：**
+
+**1. UI显示层**
+- 文件：`workflow_tab.py`, `cw_panel.py`, `iir_panel.py`
+- 技术栈：PySide6, pyqtgraph
+- 职责：将采集的数据渲染到双图显示面板，提供用户交互
+- 数据接收：通过Qt信号槽机制接收工作流执行结果
+
+**2. 工作流层**
+- 文件：`workflow_extension/` 目录下所有文件
+- 核心组件：
+  - `engine.py`: WorkflowExecutor执行引擎，负责节点执行顺序（拓扑排序）
+  - `node/cw_nodes.py`: CW谱采集节点
+  - `node/data_visualization_nodes.py`: 数据显示节点
+  - `node/device_init_node.py`: 设备初始化节点
+  - `node/device_select_nodes.py`: 设备选择节点
+  - `models.py`: 数据模型（WorkflowNodeModel, WorkflowEdgeModel, WorkflowGraphModel）
+- 职责：管理节点执行顺序，处理节点间数据传递，提供可视化编辑界面
+- 数据传递：通过端口连接和字典传递
+
+**3. Python封装层**
+- 文件：`manager.py`, `interface/` 目录
+- 技术栈：Python, ctypes
+- 职责：为上层提供统一的Python接口，隐藏底层实现细节
+- 设备驱动：
+  - `interface/Lockin/LIA_Mini_DoubleMW.py`: 锁相放大器驱动
+  - `interface/Ultramotor_USM20.py`: 超声电机驱动
+  - 其他设备驱动文件
+
+**4. C/C++驱动层**
+- 文件：`interface/Lockin/usblib/module_64/*.dll`, `*.so`
+- 技术栈：C/C++, USB协议
+- 职责：直接与硬件设备通信，实现硬件抽象层
+- 主要库文件：
+  - `USBAPI_x64.dll`: USB通信驱动
+  - `libusb-1.0.dll`: USB协议栈
+  - `libUSBAPI.so`: Linux版本
+
+**5. 硬件设备层**
+- 设备：锁相放大器、微波源、超声电机、激光器等
+- 接口：USB, RS485, Ethernet等
+- 职责：实际的数据采集和设备控制
+
+**数据流向示例（CW谱采集）：**
+```
+硬件设备 → C驱动 → Python封装 → CW采集节点 → engine.py → 数据显示节点 → UI显示
+```
+
+**具体数据传递过程：**
+1. **硬件设备**：锁相放大器采集CW谱数据
+2. **C驱动层**：USBAPI_x64.dll通过USB接口读取设备数据
+3. **Python封装层**：manager.py调用ctypes接口获取数据
+4. **工作流层**：
+   - CW采集节点调用manager.py获取数据，返回字典（包含mw_freq、ch1_x、ch1_y等字段）
+   - engine.py通过端口连接将数据传递给数据显示节点
+   - 数据显示节点接收数据并更新双图显示面板
+5. **UI显示层**：workflow_tab.py通过pyqtgraph渲染数据到双图显示区域
+
 ### 工作流执行时序图
 
 ```mermaid
@@ -800,6 +901,18 @@ workflow_extension/
 3. 添加"CW谱采集"节点，设置频率范围
 4. 添加"数据显示"节点，连接CW谱采集输出
 5. 运行工作流，实时查看CW谱数据
+
+**数据传输流程**：
+```
+设备硬件 → manager.py → CW谱采集节点 → engine.py → 数据显示节点 → UI显示
+```
+
+**详细说明**：
+- **设备层**：硬件设备通过Fortran/C驱动采集数据，通过Python接口传递给manager.py
+- **采集节点层**：CW谱采集节点（cw_nodes.py）调用设备接口获取数据，返回包含mw_freq、ch1_x、ch1_y、ch2_x、ch2_y等字段的字典
+- **执行引擎层**：engine.py通过端口连接将采集节点的输出传递给数据显示节点
+- **显示节点层**：数据显示节点（data_visualization_nodes.py）接收数据，根据data_type字段自动识别数据类型并更新双图显示面板
+- **UI层**：workflow_tab.py通过pyqtgraph将数据渲染到双图显示区域
 
 ### 示例2：全光谱采集工作流
 
