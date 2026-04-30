@@ -777,6 +777,196 @@ except Exception as e:
 
 下游节点可以通过检查 `error` 字段来判断上游是否执行成功。
 
+### 节点连接和数据传递机制
+
+#### 1. 端口定义
+
+每个节点都有输入端口和输出端口，端口定义了数据类型：
+
+```python
+# node_registry.py
+@dataclass
+class NodePortSpec:
+    name: str      # 端口名称
+    data_type: str # 数据类型（any、device、dict等）
+
+@dataclass
+class NodeSpec:
+    input_ports: List[NodePortSpec]   # 输入端口列表
+    output_ports: List[NodePortSpec]  # 输出端口列表
+```
+
+**示例（CW谱采集节点）：**
+```python
+NodeSpec(
+    node_type="cw.spectrum_acquire",
+    input_ports=[NodePortSpec("device_in", "device")],  # 输入端口
+    output_ports=[NodePortSpec("data_out", "dict")]     # 输出端口
+)
+```
+
+#### 2. 连线创建
+
+用户通过拖拽创建连线，系统自动检查端口兼容性：
+
+```python
+# canvas.py
+def _add_edge(self, src_item, src_port, dst_item, dst_port):
+    # 检查目标端口是否已被占用（一个输入端口只能有一个连接）
+    for edge in list(self.edges):
+        if edge[2] == dst_item.model.node_id and edge[3] == dst_port:
+            self.removeItem(edge[4])
+            self.edges.remove(edge)
+    
+    # 创建连线图形项
+    edge_item = WorkflowEdgeItem(src_item, src_port, dst_item, dst_port)
+    self.addItem(edge_item)
+    
+    # 保存连接信息
+    self.edges.append((
+        src_item.model.node_id,   # 源节点ID
+        src_port,                  # 源端口名
+        dst_item.model.node_id,   # 目标节点ID
+        dst_port,                  # 目标端口名
+        edge_item                  # 连线图形项
+    ))
+```
+
+#### 3. 端口兼容性检查
+
+连接前系统会自动检查端口类型是否匹配：
+
+```python
+# canvas.py
+def _is_port_compatible(self, src_item, src_port, dst_item, dst_port):
+    src_t = self._port_type(src_item.spec, src_port, output=True)
+    dst_t = self._port_type(dst_item.spec, dst_port, output=False)
+    # any类型可以连接任何类型
+    return src_t == "any" or dst_t == "any" or src_t == dst_t
+```
+
+**兼容性规则：**
+- 相同类型端口可以直接连接（如 `device` 连接到 `device`）
+- `any` 类型可以连接到任何类型
+- 类型不匹配的端口无法连接
+
+#### 4. 边模型存储连接信息
+
+连接信息存储在边模型中：
+
+```python
+# models.py
+@dataclass
+class WorkflowEdgeModel:
+    from_node: str  # 源节点ID
+    from_port: str  # 源端口名
+    to_node: str    # 目标节点ID
+    to_port: str    # 目标端口名
+```
+
+#### 5. 执行引擎的数据传递
+
+执行引擎通过拓扑排序计算节点执行顺序，并按照连接关系传递数据：
+
+```python
+# engine.py
+def run(self, graph, context):
+    # 1. 计算执行顺序（拓扑排序）
+    order = self._topological_order(graph)
+    
+    # 2. 初始化输出字典，存储每个节点的输出数据
+    outputs: Dict[str, object] = {}
+    
+    # 3. 按顺序执行节点
+    for node in order:
+        # 4. 收集输入数据
+        node_inputs = {}
+        for edge in graph.edges:
+            # 检查边是否指向当前节点
+            if edge.to_node == node.node_id and edge.from_node in outputs:
+                # 将上游节点的输出赋给当前节点的输入端口
+                node_inputs[edge.to_port] = outputs[edge.from_node]
+        
+        # 5. 执行节点逻辑
+        result = spec.executor(context, node, node_inputs)
+        
+        # 6. 保存输出结果
+        outputs[node.node_id] = result
+```
+
+#### 6. 数据传递示例
+
+**工作流：**
+```
+设备选择 → 设备初始化 → CW谱采集 → 数据显示
+```
+
+**数据传递过程：**
+
+1. **设备选择节点执行**
+```python
+outputs["node_001"] = {
+    "device_name": "样机1",
+    "exp_config_path": "config/exp_config_dev1.ini"
+}
+```
+
+2. **设备初始化节点接收数据**
+```python
+# engine.py收集输入
+node_inputs = {
+    "device_in": outputs["node_001"]  # 从设备选择节点接收
+}
+
+# 执行设备初始化
+result = device_init_executor(context, node, node_inputs)
+outputs["node_002"] = {
+    "connected": True,
+    "device_config": {...}
+}
+```
+
+3. **CW谱采集节点接收数据**
+```python
+node_inputs = {
+    "device_in": outputs["node_002"]  # 从设备初始化节点接收
+}
+
+# 执行CW谱采集
+result = cw_acquire_executor(context, node, node_inputs)
+outputs["node_003"] = {
+    "mw_freq": [...],
+    "ch1_x": [...],
+    "ch1_y": [...],
+    "data_type": "cw"
+}
+```
+
+4. **数据显示节点接收数据**
+```python
+node_inputs = {
+    "data_in": outputs["node_003"]  # 从CW谱采集节点接收
+}
+
+# 执行数据显示
+result = display_executor(context, node, node_inputs)
+```
+
+#### 7. 数据传递的核心机制
+
+**节点连接的核心机制：**
+
+1. **端口系统**：每个节点定义输入输出端口，指定数据类型
+2. **连线机制**：用户拖拽创建连线，系统存储节点ID和端口名的映射
+3. **兼容性检查**：连接前检查端口类型是否匹配
+4. **拓扑排序**：执行前计算节点执行顺序，确保数据流向正确
+5. **数据字典**：执行引擎维护一个输出字典，通过端口名传递数据
+
+**数据传递的关键：**
+- 边模型存储连接关系（from_node, from_port → to_node, to_port）
+- 执行引擎遍历边，将上游节点的输出赋给下游节点的输入
+- 通过端口名作为键，实现精确的数据路由
+
 ### 实时数据可视化
 
 采集节点支持实时数据可视化：
