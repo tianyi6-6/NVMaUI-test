@@ -29,7 +29,7 @@ from workflow_extension.canvas import WorkflowCanvasView, WorkflowNodeItem, Work
 from workflow_extension.engine import WorkflowExecutor
 from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
 from workflow_extension.node_registry import NodeRegistry
-from workflow_extension.serializer import export_json, export_python, load_workflow, save_workflow
+from workflow_extension.serializer import export_json, load_json
 
 
 class WorkflowTab(QWidget):
@@ -72,12 +72,9 @@ class WorkflowTab(QWidget):
         self.btn_run = QPushButton("运行")
         self.btn_stop = QPushButton("停止")
         self.btn_clear = QPushButton("清空")
-        self.btn_delete = QPushButton("删除选中")
         
         # 导出按钮
         self.btn_export_json = QPushButton("导出JSON")
-        self.btn_export_py = QPushButton("导出Python")
-        self.btn_export_pdf = QPushButton("导出PDF")
         
         # 添加按钮到工具栏
         for btn in [
@@ -89,10 +86,7 @@ class WorkflowTab(QWidget):
             self.btn_run,
             self.btn_stop,
             self.btn_clear,
-            self.btn_delete,
             self.btn_export_json,
-            self.btn_export_py,
-            self.btn_export_pdf,
         ]:
             toolbar.addWidget(btn)
         toolbar.addStretch()
@@ -181,10 +175,7 @@ class WorkflowTab(QWidget):
         self.btn_run.clicked.connect(self._on_run)
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_clear.clicked.connect(self._on_clear)
-        self.btn_delete.clicked.connect(self._on_delete_selected)
         self.btn_export_json.clicked.connect(self._on_export_json)
-        self.btn_export_py.clicked.connect(self._on_export_py)
-        self.btn_export_pdf.clicked.connect(self._on_export_pdf)
         
         # 撤销/重做事件绑定
         self.btn_undo.clicked.connect(self._on_undo)
@@ -260,8 +251,6 @@ class WorkflowTab(QWidget):
         if isinstance(node_item, WorkflowNodeItem):
             copy_action = menu.addAction("复制节点")
             copy_action.triggered.connect(lambda: self._copy_node(node_item))
-            del_action = menu.addAction("删除节点")
-            del_action.triggered.connect(lambda: self._delete_node(node_item))
             link_action = menu.addAction("从此节点开始连线")
             link_action.triggered.connect(lambda: self._start_link_from_node(node_item))
             if not node_item.spec.output_ports:
@@ -279,11 +268,6 @@ class WorkflowTab(QWidget):
                         node_type, title, s_pos
                     )
                 )
-        if not isinstance(node_item, WorkflowNodeItem):
-            menu.addSeparator()
-            delete_action = menu.addAction("删除选中节点")
-            delete_action.triggered.connect(self.scene.delete_selected)
-            delete_action.setEnabled(bool(self.scene.selectedItems()))
         menu.exec(self.canvas.viewport().mapToGlobal(pos))
 
     def _add_node_at(self, node_type, title, scene_pos):
@@ -301,12 +285,6 @@ class WorkflowTab(QWidget):
             params=dict(node_item.model.params),
         )
         self._log(f"已复制节点: {node_item.model.title}")
-
-    def _delete_node(self, node_item):
-        self.scene.clearSelection()
-        node_item.setSelected(True)
-        self.scene.delete_selected()
-        self._log("已删除节点。")
 
     def _start_link_from_node(self, node_item):
         ok = self.scene.begin_link_from_node(node_item)
@@ -334,18 +312,19 @@ class WorkflowTab(QWidget):
 
 
     def _save_workflow(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, "保存工作流", "", "NVM Workflow (*.nvm_workflow)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "保存工作流", "", "工作流文件 (*.json)")
         if not file_path:
             return
         graph = self.scene.build_graph()
-        save_workflow(graph, file_path)
+        export_json(graph, file_path)
         self._log(f"工作流已保存: {file_path}")
 
     def _load_workflow(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "加载工作流", "", "NVM Workflow (*.nvm_workflow)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "加载工作流", "", "工作流文件 (*.json)")
         if not file_path:
             return
-        graph = load_workflow(file_path)
+        
+        graph = load_json(file_path)
         self.scene.load_graph(graph)
         self._log(f"工作流已加载: {file_path}")
 
@@ -355,32 +334,6 @@ class WorkflowTab(QWidget):
             return
         export_json(self.scene.build_graph(), file_path)
         self._log(f"已导出 JSON: {file_path}")
-
-    def _export_python(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, "导出 Python", "", "Python (*.py)")
-        if not file_path:
-            return
-        export_python(self.scene.build_graph(), file_path)
-        self._log(f"已导出 Python: {file_path}")
-
-    def _export_pdf(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, "导出 PDF", "", "PDF (*.pdf)")
-        if not file_path:
-            return
-        payload = {
-            "graph": {
-                "nodes": [n.__dict__ for n in self.scene.build_graph().nodes],
-                "edges": [e.__dict__ for e in self.scene.build_graph().edges],
-            },
-            "results": self._latest_results,
-        }
-        doc = QTextDocument()
-        doc.setPlainText("NVMagUI Workflow Report\n\n" + json.dumps(payload, ensure_ascii=False, indent=2))
-        printer = QPrinter()
-        printer.setOutputFormat(QPrinter.PdfFormat)
-        printer.setOutputFileName(file_path)
-        doc.print_(printer)
-        self._log(f"已导出 PDF: {file_path}")
 
     def _run_workflow(self):
         graph = self.scene.build_graph()
@@ -583,18 +536,8 @@ class WorkflowTab(QWidget):
         self._reset_plot_buffers()
         self._log("已清空工作流画布")
 
-    def _on_delete_selected(self):
-        self.scene.delete_selected_with_undo()
-        self._log("已删除选中节点")
-
     def _on_export_json(self):
         self._export_json()
-
-    def _on_export_py(self):
-        self._export_python()
-
-    def _on_export_pdf(self):
-        self._export_pdf()
 
     def _on_palette_search(self):
         self._filter_palette(self.palette_search.text())
