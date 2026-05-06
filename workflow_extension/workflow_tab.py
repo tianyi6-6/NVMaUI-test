@@ -81,7 +81,7 @@ class WorkflowTab(QWidget):
         # 基本操作按钮
         self.btn_new = QPushButton("新建工作流")
         self.btn_save = QPushButton("保存")
-        self.btn_load = QPushButton("加载")
+        self.btn_load = QPushButton("导入JSON")
         
         # 撤销/重做按钮
         self.btn_undo = QPushButton("撤销")
