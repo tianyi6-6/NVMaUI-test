@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QGroupBox,
     QPushButton,
+    QApplication,
 )
 
 from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
@@ -53,6 +54,26 @@ class TitleEditEventFilter(QObject):
             # 不拦截，返回False让默认处理器处理
         
         return super().eventFilter(obj, event)
+
+
+class WheelComboBox(QComboBox):
+    def __init__(self, node_item=None, parent=None):
+        super().__init__(parent)
+        self._node_item = node_item
+
+    def _set_popup_opened(self, opened):
+        scene = self._node_item.scene() if self._node_item is not None else None
+        if scene is not None:
+            scene._combo_box_opened = opened
+            scene._active_combo_box = self if opened else None
+
+    def showPopup(self):
+        self._set_popup_opened(True)
+        super().showPopup()
+
+    def hidePopup(self):
+        super().hidePopup()
+        self._set_popup_opened(False)
 
 
 class WorkflowNodeItem(QGraphicsRectItem):
@@ -135,7 +156,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
                     selector_row = QHBoxLayout()
                     is_device_init_node = self.model.node_type == "device.connect"
                     selector_label = QLabel("实验参数" if is_device_init_node else "二级分类")
-                    selector = QComboBox()
+                    selector = WheelComboBox(self)
                     subcategory_names = list(subgroups.keys())
                     selector.addItems(subcategory_names)
                     selector_row.addWidget(selector_label)
@@ -259,7 +280,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
             input_layout.addWidget(set_label)
             
             if p.editor == "select":
-                editor = QComboBox()
+                editor = WheelComboBox(self)
                 editor.addItems([str(x) for x in p.options])
                 idx = editor.findText(str(current))
                 editor.setCurrentIndex(max(idx, 0))
@@ -328,7 +349,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
             self._param_editors[p.key] = editor
         elif p.editor == "select":
             # 下拉选择
-            editor = QComboBox()
+            editor = WheelComboBox(self)
             editor.addItems([str(x) for x in p.options])
             idx = editor.findText(str(current))
             editor.setCurrentIndex(max(idx, 0))
@@ -878,11 +899,31 @@ class WorkflowScene(QGraphicsScene):
         self.undo_stack = WorkflowUndoStack()
         self._node_move_start_positions = {}  # 节点移动开始位置
         self._is_moving_nodes = False
+        # 新增：下拉菜单展开状态标志
+        self._combo_box_opened = False
+        self._active_combo_box = None
         # Remove scene rect limitation to enable infinite canvas
 # self.setSceneRect(-2000, -2000, 4000, 4000)
 
     def set_spec_resolver(self, resolver):
         self.spec_resolver = resolver
+
+    def eventFilter(self, obj, event):
+        """
+        事件过滤器，用于检测QComboBox弹出列表的显示和隐藏
+        """
+        from PySide6.QtCore import QEvent
+        # 检测QComboBox弹出列表的显示和隐藏
+        if event.type() == QEvent.Show:
+            class_name = obj.metaObject().className()
+            # QComboBox的弹出列表通常是QListView
+            if "QListView" in class_name or "QComboBox" in class_name:
+                self._combo_box_opened = True
+        elif event.type() == QEvent.Hide:
+            class_name = obj.metaObject().className()
+            if "QListView" in class_name or "QComboBox" in class_name:
+                self._combo_box_opened = False
+        return super().eventFilter(obj, event)
 
     def drawBackground(self, painter, rect):
         super().drawBackground(painter, rect)
@@ -1529,6 +1570,19 @@ class WorkflowCanvasView(QGraphicsView):
         super().keyPressEvent(event)
 
     def wheelEvent(self, event):
+        # 检查是否有下拉菜单展开
+        active_combo = getattr(self.scene(), '_active_combo_box', None) if self.scene() else None
+        if active_combo is not None and active_combo.view().isVisible():
+            scrollbar = active_combo.view().verticalScrollBar()
+            delta = event.angleDelta().y()
+            step = scrollbar.singleStep() * 3
+            scrollbar.setValue(scrollbar.value() - step if delta > 0 else scrollbar.value() + step)
+            event.accept()
+            return
+        if (self.scene() and getattr(self.scene(), '_combo_box_opened', False)) or QApplication.activePopupWidget() is not None:
+            event.accept()
+            return
+        
         factor = 1.15 if event.angleDelta().y() > 0 else 0.87
         self.scale(factor, factor)
         self._update_overlay(event.position().toPoint(), force_show=True)
