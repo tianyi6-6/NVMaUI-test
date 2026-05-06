@@ -2,7 +2,7 @@ import json
 import logging
 
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent, QObject
 from PySide6.QtGui import QTextDocument
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
+    QInputDialog,
 )
 
 from workflow_extension.builtins import register_builtin_nodes
@@ -30,6 +31,22 @@ from workflow_extension.engine import WorkflowExecutor
 from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
 from workflow_extension.node_registry import NodeRegistry
 from workflow_extension.serializer import export_json, load_json
+
+
+class TabBarEventFilter(QObject):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._on_tab_double_clicked = None
+
+    def set_on_tab_double_clicked(self, callback):
+        self._on_tab_double_clicked = callback
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonDblClick:
+            if self._on_tab_double_clicked:
+                self._on_tab_double_clicked(event)
+                return True
+        return super().eventFilter(obj, event)
 
 
 class WorkflowTab(QWidget):
@@ -134,6 +151,12 @@ class WorkflowTab(QWidget):
         self.workflow_tabs.currentChanged.connect(self._on_workflow_tab_changed)
         self.workflow_tabs.tabCloseRequested.connect(self._close_workflow_tab)
         self.workflow_tabs.tabBar().tabMoved.connect(lambda *_: self._renumber_workflow_tabs())
+        
+        # 安装事件过滤器以支持双击重命名标签
+        self._tab_bar_filter = TabBarEventFilter(self)
+        self._tab_bar_filter.set_on_tab_double_clicked(self._on_tab_bar_double_clicked)
+        self.workflow_tabs.tabBar().installEventFilter(self._tab_bar_filter)
+        
         center_layout.addWidget(self.workflow_tabs, 1)
         self._create_workflow_page("工作流 1", switch_to=True)
         splitter.addWidget(center)
@@ -273,6 +296,22 @@ class WorkflowTab(QWidget):
         page.deleteLater()
         self._renumber_workflow_tabs()
         self._log(f"已关闭工作流页签，剩余页签已重新编号。")
+
+    def _on_tab_bar_double_clicked(self, event):
+        """双击标签页标题时触发重命名"""
+        tab_bar = self.workflow_tabs.tabBar()
+        index = tab_bar.tabAt(event.pos())
+        if index < 0:
+            return
+        
+        current_title = self.workflow_tabs.tabText(index)
+        new_title, ok = QInputDialog.getText(self, "重命名标签", "请输入新的标签名称:", QLineEdit.EchoMode.Normal, current_title)
+        
+        if ok and new_title and new_title != current_title:
+            page = self.workflow_tabs.widget(index)
+            page.workflow_title = new_title
+            self.workflow_tabs.setTabText(index, new_title)
+            self._log(f"已重命名标签: {current_title} -> {new_title}")
 
     def _bind_events(self):
         # 基本事件绑定
