@@ -62,7 +62,7 @@ class WorkflowTab(QWidget):
         toolbar = QHBoxLayout()
         
         # 基本操作按钮
-        self.btn_new = QPushButton("新建")
+        self.btn_new = QPushButton("新建工作流")
         self.btn_save = QPushButton("保存")
         self.btn_load = QPushButton("加载")
         
