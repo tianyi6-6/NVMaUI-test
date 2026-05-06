@@ -62,10 +62,13 @@ class WheelComboBox(QComboBox):
         self._node_item = node_item
 
     def _set_popup_opened(self, opened):
-        scene = self._node_item.scene() if self._node_item is not None else None
-        if scene is not None:
-            scene._combo_box_opened = opened
-            scene._active_combo_box = self if opened else None
+        try:
+            scene = self._node_item.scene() if self._node_item is not None else None
+            if scene is not None:
+                scene._combo_box_opened = opened
+                scene._active_combo_box = self if opened else None
+        except:
+            pass
 
     def showPopup(self):
         self._set_popup_opened(True)
@@ -289,11 +292,27 @@ class WorkflowNodeItem(QGraphicsRectItem):
                 )
             elif p.editor == "int":
                 editor = QSpinBox()
-                editor.setRange(int(p.minimum), int(p.maximum))
+                # 处理大数值溢出问题
+                try:
+                    min_val = int(p.minimum)
+                    max_val = int(p.maximum)
+                    # 限制在int32范围内
+                    INT_MAX = 2147483647
+                    INT_MIN = -2147483648
+                    min_val = max(INT_MIN, min(INT_MAX, min_val))
+                    max_val = max(INT_MIN, min(INT_MAX, max_val))
+                    editor.setRange(min_val, max_val)
+                except (ValueError, OverflowError):
+                    editor.setRange(-2147483648, 2147483647)
                 editor.setSingleStep(int(max(1, p.step)))
                 try:
-                    editor.setValue(int(self._extract_numeric(current, 0)))
-                except (ValueError, AttributeError):
+                    val = int(self._extract_numeric(current, 0))
+                    # 限制在int32范围内
+                    INT_MAX = 2147483647
+                    INT_MIN = -2147483648
+                    val = max(INT_MIN, min(INT_MAX, val))
+                    editor.setValue(val)
+                except (ValueError, AttributeError, OverflowError):
                     editor.setValue(0)
                 editor.valueChanged.connect(
                     lambda v, key=p.key: (self._set_param_value(key, v), _refresh_pending_state(v))
@@ -360,9 +379,28 @@ class WorkflowNodeItem(QGraphicsRectItem):
         elif p.editor == "int":
             # 整数输入
             editor = QSpinBox()
-            editor.setRange(int(p.minimum), int(p.maximum))
+            # 处理大数值溢出问题
+            try:
+                min_val = int(p.minimum)
+                max_val = int(p.maximum)
+                # 限制在int32范围内
+                INT_MAX = 2147483647
+                INT_MIN = -2147483648
+                min_val = max(INT_MIN, min(INT_MAX, min_val))
+                max_val = max(INT_MIN, min(INT_MAX, max_val))
+                editor.setRange(min_val, max_val)
+            except (ValueError, OverflowError):
+                editor.setRange(-2147483648, 2147483647)
             editor.setSingleStep(int(max(1, p.step)))
-            editor.setValue(int(current) if current else 0)
+            try:
+                val = int(current) if current else 0
+                # 限制在int32范围内
+                INT_MAX = 2147483647
+                INT_MIN = -2147483648
+                val = max(INT_MIN, min(INT_MAX, val))
+                editor.setValue(val)
+            except (ValueError, OverflowError):
+                editor.setValue(0)
             editor._param_key = p.key  # 存储参数键以便后续查找
             editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
             form.addRow(p.label, editor)
@@ -1572,13 +1610,16 @@ class WorkflowCanvasView(QGraphicsView):
     def wheelEvent(self, event):
         # 检查是否有下拉菜单展开
         active_combo = getattr(self.scene(), '_active_combo_box', None) if self.scene() else None
-        if active_combo is not None and active_combo.view().isVisible():
-            scrollbar = active_combo.view().verticalScrollBar()
-            delta = event.angleDelta().y()
-            step = scrollbar.singleStep() * 3
-            scrollbar.setValue(scrollbar.value() - step if delta > 0 else scrollbar.value() + step)
-            event.accept()
-            return
+        try:
+            if active_combo is not None and active_combo.view().isVisible():
+                scrollbar = active_combo.view().verticalScrollBar()
+                delta = event.angleDelta().y()
+                step = scrollbar.singleStep() * 3
+                scrollbar.setValue(scrollbar.value() - step if delta > 0 else scrollbar.value() + step)
+                event.accept()
+                return
+        except:
+            pass
         if (self.scene() and getattr(self.scene(), '_combo_box_opened', False)) or QApplication.activePopupWidget() is not None:
             event.accept()
             return
