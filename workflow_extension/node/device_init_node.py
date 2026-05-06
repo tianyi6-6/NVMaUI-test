@@ -15,6 +15,11 @@ def _extract_numeric(value, default=0.0):
     return float(matched.group())
 
 
+def _extract_numeric_text(value, default="0"):
+    matched = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", str(value or ""))
+    return matched.group() if matched else str(default)
+
+
 def _make_param(category, key, editor, current_value, valid_range, *, options=None, minimum=0.0, maximum=999999.0, step=1.0, unit=""):
     return NodeParamSpec(
         key=key,
@@ -218,7 +223,8 @@ def register_device_init_nodes(registry: NodeRegistry):
     default_params = {}
     for param in all_params:
         if param.editor == "float":
-            default_params[param.key] = _extract_numeric(param.current_value, 0.0)
+            # 浮点参数底层以字符串保存，避免创建默认参数时被float转换导致高精度小数丢失。
+            default_params[param.key] = _extract_numeric_text(param.current_value, "0")
         elif param.editor == "int":
             default_params[param.key] = int(_extract_numeric(param.current_value, 0))
         elif param.options:

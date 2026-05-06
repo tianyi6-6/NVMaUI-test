@@ -103,9 +103,9 @@ def register_all_optical_nodes(registry):
             title="全光谱采集",
             category="全光谱数据采集",
             default_params={
-                "start_motor_angle": 0.1,
-                "stop_motor_angle": 359.9,
-                "step_motor_angle": 2.0
+                "start_motor_angle": "0.1",
+                "stop_motor_angle": "359.9",
+                "step_motor_angle": "2.0"
             },
             input_ports=[NodePortSpec("device_in", "device")],
             output_ports=[

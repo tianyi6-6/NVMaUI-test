@@ -490,9 +490,9 @@ def register_cw_nodes(registry):
             category="CW谱数据采集",
             default_params={
                 "mw_channel": "微波通道1",
-                "start_freq_mhz": 2800.0,
-                "end_freq_mhz": 2950.0,
-                "step_freq_mhz": 2.0,
+                "start_freq_mhz": "2800.0",
+                "end_freq_mhz": "2950.0",
+                "step_freq_mhz": "2.0",
                 "single_point_count": 10
             },
             input_ports=[NodePortSpec("device_in", "device")],

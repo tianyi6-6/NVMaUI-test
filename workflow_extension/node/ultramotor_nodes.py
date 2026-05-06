@@ -76,7 +76,7 @@ def register_ultramotor_nodes(registry):
             title="超声电机状态",
             category="设备",
             default_params={
-                "target_angle": 0.0,
+                "target_angle": "0.0",
                 "motor_direction": "正转"
             },
             input_ports=[NodePortSpec("device_in", "device")],

@@ -158,7 +158,7 @@ def register_iir_nodes(registry):
             title="IIR谱采集",
             category="IIR谱数据采集",
             default_params={
-                "acq_time": 0.5,
+                "acq_time": "0.5",
                 "display_length": 1000,
                 "mw_mode": "不操作微波",
                 "trend_remove_mode": "关闭",

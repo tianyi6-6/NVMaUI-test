@@ -2,6 +2,7 @@ import uuid
 import logging
 from functools import partial
 import re
+from decimal import Decimal, InvalidOperation
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer, QEvent, QObject
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QKeySequence
@@ -77,6 +78,96 @@ class WheelComboBox(QComboBox):
     def hidePopup(self):
         super().hidePopup()
         self._set_popup_opened(False)
+
+
+class HighPrecisionSpinBox(QWidget):
+    valueChanged = Signal(str)
+
+    def __init__(self, value="0", minimum=None, maximum=None, step="1", integer=False, parent=None):
+        super().__init__(parent)
+        self._minimum = self._to_decimal(minimum) if minimum is not None else None
+        self._maximum = self._to_decimal(maximum) if maximum is not None else None
+        self._step = self._to_decimal(step) if step is not None else Decimal("1")
+        self._integer = bool(integer)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._edit = QLineEdit(self._format_decimal_text(value))
+        self._edit.installEventFilter(self)
+        self._edit.editingFinished.connect(self._commit_text)
+        layout.addWidget(self._edit, 1)
+
+        button_panel = QWidget()
+        button_layout = QVBoxLayout(button_panel)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(0)
+
+        self._up_button = QPushButton("▲")
+        self._down_button = QPushButton("▼")
+        for button in (self._up_button, self._down_button):
+            button.setFixedSize(18, 11)
+            button.setFocusPolicy(Qt.NoFocus)
+            button.setStyleSheet("QPushButton { padding: 0px; font-size: 8px; }")
+            button_layout.addWidget(button)
+
+        layout.addWidget(button_panel)
+        self._up_button.clicked.connect(lambda: self.step_by(1))
+        self._down_button.clicked.connect(lambda: self.step_by(-1))
+
+    def text(self):
+        return self._edit.text()
+
+    def setText(self, value):
+        self._edit.setText(self._format_decimal_text(value))
+
+    def eventFilter(self, obj, event):
+        if obj is self._edit and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Up:
+                self.step_by(1)
+                return True
+            if event.key() == Qt.Key_Down:
+                self.step_by(-1)
+                return True
+        return super().eventFilter(obj, event)
+
+    def step_by(self, direction):
+        value = self._to_decimal(self._edit.text())
+        value += self._step * Decimal(direction)
+        if self._minimum is not None:
+            value = max(self._minimum, value)
+        if self._maximum is not None:
+            value = min(self._maximum, value)
+        self._edit.setText(self._format_decimal_text(value))
+        self.valueChanged.emit(self._edit.text().strip())
+
+    def _commit_text(self):
+        text = self._edit.text().strip()
+        if not text:
+            text = "0"
+        value = self._to_decimal(text)
+        if self._minimum is not None:
+            value = max(self._minimum, value)
+        if self._maximum is not None:
+            value = min(self._maximum, value)
+        if self._integer:
+            value = value.to_integral_value()
+        committed = self._format_decimal_text(value)
+        self._edit.setText(committed)
+        self.valueChanged.emit(committed)
+
+    @staticmethod
+    def _to_decimal(value):
+        text = WorkflowNodeItem._extract_numeric_text(value, "0")
+        try:
+            return Decimal(text)
+        except InvalidOperation:
+            return Decimal("0")
+
+    @staticmethod
+    def _format_decimal_text(value):
+        return WorkflowNodeItem._trim_decimal_zeros(WorkflowNodeItem._extract_numeric_text(value, "0"))
 
 
 class WorkflowNodeItem(QGraphicsRectItem):
@@ -291,41 +382,28 @@ class WorkflowNodeItem(QGraphicsRectItem):
                     lambda v, key=p.key: (self._set_param_value(key, v), _refresh_pending_state(v))
                 )
             elif p.editor == "int":
-                editor = QSpinBox()
-                # 处理大数值溢出问题
-                try:
-                    min_val = int(p.minimum)
-                    max_val = int(p.maximum)
-                    # 限制在int32范围内
-                    INT_MAX = 2147483647
-                    INT_MIN = -2147483648
-                    min_val = max(INT_MIN, min(INT_MAX, min_val))
-                    max_val = max(INT_MIN, min(INT_MAX, max_val))
-                    editor.setRange(min_val, max_val)
-                except (ValueError, OverflowError):
-                    editor.setRange(-2147483648, 2147483647)
-                editor.setSingleStep(int(max(1, p.step)))
-                try:
-                    val = int(self._extract_numeric(current, 0))
-                    # 限制在int32范围内
-                    INT_MAX = 2147483647
-                    INT_MIN = -2147483648
-                    val = max(INT_MIN, min(INT_MAX, val))
-                    editor.setValue(val)
-                except (ValueError, AttributeError, OverflowError):
-                    editor.setValue(0)
+                editor = HighPrecisionSpinBox(
+                    current,
+                    minimum=p.minimum,
+                    maximum=p.maximum,
+                    step=p.step,
+                    integer=True,
+                    parent=self._proxy.widget() if self._proxy is not None else None,
+                )
+                # 整数和浮点数统一使用HighPrecisionSpinBox，避免Qt原生SpinBox的int32/float精度限制。
                 editor.valueChanged.connect(
                     lambda v, key=p.key: (self._set_param_value(key, v), _refresh_pending_state(v))
                 )
             elif p.editor == "float":
-                editor = QDoubleSpinBox()
-                editor.setDecimals(6)
-                editor.setRange(float(p.minimum), float(p.maximum))
-                editor.setSingleStep(float(p.step))
-                try:
-                    editor.setValue(float(self._extract_numeric(current, 0.0)))
-                except (ValueError, AttributeError):
-                    editor.setValue(0.0)
+                editor = HighPrecisionSpinBox(
+                    current,
+                    minimum=p.minimum,
+                    maximum=p.maximum,
+                    step=p.step,
+                    integer=False,
+                    parent=self._proxy.widget() if self._proxy is not None else None,
+                )
+                # 浮点参数底层用字符串/Decimal处理，用户输入任意小数位数都不会被float截断。
                 editor.valueChanged.connect(
                     lambda v, key=p.key: (self._set_param_value(key, v), _refresh_pending_state(v))
                 )
@@ -378,40 +456,30 @@ class WorkflowNodeItem(QGraphicsRectItem):
             self._param_editors[p.key] = editor
         elif p.editor == "int":
             # 整数输入
-            editor = QSpinBox()
-            # 处理大数值溢出问题
-            try:
-                min_val = int(p.minimum)
-                max_val = int(p.maximum)
-                # 限制在int32范围内
-                INT_MAX = 2147483647
-                INT_MIN = -2147483648
-                min_val = max(INT_MIN, min(INT_MAX, min_val))
-                max_val = max(INT_MIN, min(INT_MAX, max_val))
-                editor.setRange(min_val, max_val)
-            except (ValueError, OverflowError):
-                editor.setRange(-2147483648, 2147483647)
-            editor.setSingleStep(int(max(1, p.step)))
-            try:
-                val = int(current) if current else 0
-                # 限制在int32范围内
-                INT_MAX = 2147483647
-                INT_MIN = -2147483648
-                val = max(INT_MIN, min(INT_MAX, val))
-                editor.setValue(val)
-            except (ValueError, OverflowError):
-                editor.setValue(0)
+            editor = HighPrecisionSpinBox(
+                current,
+                minimum=p.minimum,
+                maximum=p.maximum,
+                step=p.step,
+                integer=True,
+                parent=self._proxy.widget() if self._proxy is not None else None,
+            )
+            # 整数和浮点数统一使用HighPrecisionSpinBox，避免Qt原生SpinBox的int32/float精度限制。
             editor._param_key = p.key  # 存储参数键以便后续查找
             editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
             form.addRow(p.label, editor)
             self._param_editors[p.key] = editor
         elif p.editor == "float":
             # 浮点数输入
-            editor = QDoubleSpinBox()
-            editor.setDecimals(6)
-            editor.setRange(float(p.minimum), float(p.maximum))
-            editor.setSingleStep(float(p.step))
-            editor.setValue(float(current) if current else 0.0)
+            editor = HighPrecisionSpinBox(
+                current,
+                minimum=p.minimum,
+                maximum=p.maximum,
+                step=p.step,
+                integer=False,
+                parent=self._proxy.widget() if self._proxy is not None else None,
+            )
+            # 浮点参数底层用字符串/Decimal处理，用户输入任意小数位数都不会被float截断。
             editor._param_key = p.key  # 存储参数键以便后续查找
             editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
             form.addRow(p.label, editor)
@@ -440,14 +508,36 @@ class WorkflowNodeItem(QGraphicsRectItem):
             return default
 
     @staticmethod
+    def _extract_numeric_text(value, default="0"):
+        text = "" if value is None else str(value).strip()
+        match = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", text)
+        return match.group() if match else str(default)
+
+    @staticmethod
+    def _trim_decimal_zeros(number_text):
+        try:
+            decimal_value = Decimal(str(number_text))
+        except (InvalidOperation, ValueError):
+            return str(number_text)
+        plain_text = format(decimal_value, "f")
+        if "." in plain_text:
+            plain_text = plain_text.rstrip("0").rstrip(".")
+        return plain_text or "0"
+
+    @staticmethod
+    def _format_decimal_text(value):
+        # 仅用于UI初始展示：自动去掉浮点数字符串末尾无意义的0，不改变用户后续手动输入的原始字符串。
+        return WorkflowNodeItem._trim_decimal_zeros(WorkflowNodeItem._extract_numeric_text(value, "0"))
+
+    @staticmethod
     def _format_device_display_value(value, unit):
         text = "" if value is None else str(value).strip()
         if not text:
             return "-"
-        if unit and re.search(rf"{re.escape(unit)}$", text):
-            return text
-        if unit and re.fullmatch(r"[-+]?\d*\.?\d+", text):
-            return f"{text}{unit}"
+        number_text = WorkflowNodeItem._extract_numeric_text(text, "")
+        if number_text:
+            formatted_number = WorkflowNodeItem._trim_decimal_zeros(number_text)
+            return f"{formatted_number}{unit}" if unit else formatted_number
         return text
 
     @staticmethod
@@ -465,9 +555,12 @@ class WorkflowNodeItem(QGraphicsRectItem):
     @staticmethod
     def _is_device_value_pending(param_spec, current_value, input_value):
         if param_spec.editor in {"int", "float"}:
-            current_num = WorkflowNodeItem._extract_numeric(current_value, 0.0)
-            input_num = WorkflowNodeItem._extract_numeric(input_value, 0.0)
-            return abs(float(current_num) - float(input_num)) > 1e-9
+            try:
+                current_num = Decimal(WorkflowNodeItem._extract_numeric_text(current_value, "0"))
+                input_num = Decimal(WorkflowNodeItem._extract_numeric_text(input_value, "0"))
+                return current_num != input_num
+            except InvalidOperation:
+                return str(current_value).strip() != str(input_value).strip()
         return str(current_value).strip() != str(input_value).strip()
 
     def _clear_form_layout(self, form_layout):
@@ -519,12 +612,12 @@ class WorkflowNodeItem(QGraphicsRectItem):
         # 从存储的编辑器字典中查找并更新
         if key in self._param_editors:
             widget = self._param_editors[key]
-            if isinstance(widget, QLineEdit):
+            if isinstance(widget, HighPrecisionSpinBox):
+                widget.setText(value)
+            elif isinstance(widget, QLineEdit):
                 widget.setText(str(value))
             elif isinstance(widget, QSpinBox):
                 widget.setValue(int(value))
-            elif isinstance(widget, QDoubleSpinBox):
-                widget.setValue(float(value))
             elif isinstance(widget, QComboBox):
                 idx = widget.findText(str(value))
                 widget.setCurrentIndex(max(idx, 0))
@@ -545,7 +638,8 @@ class WorkflowNodeItem(QGraphicsRectItem):
             if p.editor == "int":
                 p.current_value = str(int(round(float(new_value))))
             elif p.editor == "float":
-                p.current_value = str(float(new_value))
+                # 设备浮点参数不转换为float，避免保存/应用时丢失高精度；仅当前值展示会自动去掉末尾0。
+                p.current_value = str(new_value).strip()
             else:
                 p.current_value = str(new_value)
             updated = True
@@ -1599,10 +1693,7 @@ class WorkflowCanvasView(QGraphicsView):
             event.accept()
             return
         elif event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
-            # Delete/Backspace - 删除选中节点（仅在非编辑状态下）
-            if self.scene().selectedItems():
-                self.scene().delete_selected_with_undo()
-                event.accept()
+            super().keyPressEvent(event)
             return
         
         super().keyPressEvent(event)
