@@ -50,6 +50,10 @@ class WorkflowTab(QWidget):
         self._plot_mode = "cw"
         self._prop_editors = {}
         self._selected_node = None
+        self._active_workflow_page = None
+        self._running_workflow_page = None
+        self.scene = None
+        self.canvas = None
         self._build_ui()
         self._bind_events()
 
@@ -123,13 +127,15 @@ class WorkflowTab(QWidget):
 
         center = QWidget()
         center_layout = QVBoxLayout(center)
-        self.scene = WorkflowScene(self, enable_extended_node_ui=self.enable_extended_node_ui)
-        self.scene.set_spec_resolver(self.registry.get)
-        self.scene.on_node_param_changed = self._on_node_inline_params_changed
-        self.canvas = WorkflowCanvasView(self.scene, self)
-        self.canvas.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.canvas.customContextMenuRequested.connect(self._open_canvas_context_menu)
-        center_layout.addWidget(self.canvas, 1)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        self.workflow_tabs = QTabWidget()
+        self.workflow_tabs.setTabsClosable(True)
+        self.workflow_tabs.setMovable(True)
+        self.workflow_tabs.currentChanged.connect(self._on_workflow_tab_changed)
+        self.workflow_tabs.tabCloseRequested.connect(self._close_workflow_tab)
+        self.workflow_tabs.tabBar().tabMoved.connect(lambda *_: self._renumber_workflow_tabs())
+        center_layout.addWidget(self.workflow_tabs, 1)
+        self._create_workflow_page("工作流 1", switch_to=True)
         splitter.addWidget(center)
 
         right = QWidget()
@@ -167,6 +173,107 @@ class WorkflowTab(QWidget):
         self.tab_widget.setCurrentIndex(1)
         self._apply_plot_mode("cw")
 
+    def _create_workflow_page(self, title=None, switch_to=True):
+        page = QWidget()
+        page.workflow_title = title or f"工作流 {self._next_workflow_number()}"
+        page.latest_results = {}
+        page.plot_x = []
+        page.plot_y = []
+        page.plot_y_ref = []
+        page.plot_upper_aux = []
+        page.plot_lower_main = []
+        page.plot_lower_aux = []
+        page.plot_mode = "cw"
+
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        scene = WorkflowScene(self, enable_extended_node_ui=self.enable_extended_node_ui)
+        scene.set_spec_resolver(self.registry.get)
+        scene.on_node_param_changed = self._on_node_inline_params_changed
+        scene.node_selected.connect(self._on_node_selected)
+        scene.graph_changed.connect(self._on_graph_changed)
+        scene.undo_stack.can_undo_changed.connect(self.btn_undo.setEnabled)
+        scene.undo_stack.can_redo_changed.connect(self.btn_redo.setEnabled)
+        scene.undo_stack.stack_changed.connect(self._update_undo_redo_tooltips)
+
+        canvas = WorkflowCanvasView(scene, self)
+        canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        canvas.customContextMenuRequested.connect(self._open_canvas_context_menu)
+        layout.addWidget(canvas, 1)
+
+        page.scene = scene
+        page.canvas = canvas
+        index = self.workflow_tabs.addTab(page, page.workflow_title)
+        if switch_to:
+            self.workflow_tabs.setCurrentIndex(index)
+            self._activate_workflow_page(page)
+        return page
+
+    def _next_workflow_number(self):
+        numbers = []
+        for index in range(self.workflow_tabs.count()):
+            text = self.workflow_tabs.tabText(index).strip()
+            if text.startswith("工作流"):
+                try:
+                    numbers.append(int(text.replace("工作流", "").strip()))
+                except ValueError:
+                    pass
+        return max(numbers, default=0) + 1
+
+    def _renumber_workflow_tabs(self):
+        for index in range(self.workflow_tabs.count()):
+            page = self.workflow_tabs.widget(index)
+            title = f"工作流 {index + 1}"
+            page.workflow_title = title
+            self.workflow_tabs.setTabText(index, title)
+
+    def _save_active_page_state(self):
+        page = self._active_workflow_page
+        if page is None:
+            return
+        page.latest_results = dict(self._latest_results)
+        page.plot_x = list(self._plot_x)
+        page.plot_y = list(self._plot_y)
+        page.plot_y_ref = list(self._plot_y_ref)
+        page.plot_upper_aux = list(self._plot_upper_aux)
+        page.plot_lower_main = list(self._plot_lower_main)
+        page.plot_lower_aux = list(self._plot_lower_aux)
+        page.plot_mode = self._plot_mode
+
+    def _activate_workflow_page(self, page):
+        self._save_active_page_state()
+        self._active_workflow_page = page
+        self.scene = page.scene
+        self.canvas = page.canvas
+        self._selected_node = None
+        self._prop_editors = {}
+        self._latest_results = dict(page.latest_results)
+        self._plot_x = list(page.plot_x)
+        self._plot_y = list(page.plot_y)
+        self._plot_y_ref = list(page.plot_y_ref)
+        self._plot_upper_aux = list(page.plot_upper_aux)
+        self._plot_lower_main = list(page.plot_lower_main)
+        self._plot_lower_aux = list(page.plot_lower_aux)
+        self._plot_mode = page.plot_mode
+        self._update_undo_redo_tooltips()
+        if hasattr(self, "plot_curve_top_main"):
+            self._apply_plot_mode(self._plot_mode)
+
+    def _on_workflow_tab_changed(self, index):
+        if index < 0:
+            return
+        self._activate_workflow_page(self.workflow_tabs.widget(index))
+
+    def _close_workflow_tab(self, index):
+        if self.workflow_tabs.count() <= 1:
+            QMessageBox.information(self, "提示", "至少需要保留一个工作流页签。")
+            return
+        page = self.workflow_tabs.widget(index)
+        self.workflow_tabs.removeTab(index)
+        page.deleteLater()
+        self._renumber_workflow_tabs()
+        self._log(f"已关闭工作流页签，剩余页签已重新编号。")
+
     def _bind_events(self):
         # 基本事件绑定
         self.btn_new.clicked.connect(self._on_new)
@@ -181,11 +288,6 @@ class WorkflowTab(QWidget):
         self.btn_undo.clicked.connect(self._on_undo)
         self.btn_redo.clicked.connect(self._on_redo)
         
-        # 连接撤销/重做信号以更新按钮状态
-        self.scene.undo_stack.can_undo_changed.connect(self.btn_undo.setEnabled)
-        self.scene.undo_stack.can_redo_changed.connect(self.btn_redo.setEnabled)
-        self.scene.undo_stack.stack_changed.connect(self._update_undo_redo_tooltips)
-        
         # 初始化撤销/重做按钮状态
         self.btn_undo.setEnabled(self.scene.undo_stack.can_undo())
         self.btn_redo.setEnabled(self.scene.undo_stack.can_redo())
@@ -194,8 +296,6 @@ class WorkflowTab(QWidget):
         # 其他事件绑定
         self.palette.itemDoubleClicked.connect(self._on_palette_double_clicked)
         self.palette_search.textChanged.connect(self._on_palette_search)
-        self.scene.node_selected.connect(self._on_node_selected)
-        self.scene.graph_changed.connect(self._on_graph_changed)
         self.executor.node_started.connect(self._on_exec_node_started)
         self.executor.node_finished.connect(self._on_exec_node_finished)
         self.executor.node_failed.connect(self._on_exec_node_failed)
@@ -305,10 +405,8 @@ class WorkflowTab(QWidget):
             return text
 
     def _new_workflow(self):
-        self.scene.clear_all()
-        self._latest_results = {}
-        self._reset_plot_buffers()
-        self._log("已新建空白工作流。")
+        page = self._create_workflow_page(switch_to=True)
+        self._log(f"已新建空白工作流页签: {page.workflow_title}")
 
 
     def _save_workflow(self):
@@ -347,6 +445,7 @@ class WorkflowTab(QWidget):
             return
         self._latest_results = {}
         self._reset_plot_buffers()
+        self._running_workflow_page = self._active_workflow_page
         self._log("开始执行工作流。")
         context = {"app": app_context, "plot_callback": self._on_plot_payload, "workflow_tab": self}
         self.executor.run(graph, context)
@@ -356,13 +455,15 @@ class WorkflowTab(QWidget):
         self._log("已请求停止工作流执行。")
 
     def _on_exec_node_started(self, node_id):
-        item = self.scene.node_items.get(node_id)
+        scene = self._running_workflow_page.scene if self._running_workflow_page is not None else self.scene
+        item = scene.node_items.get(node_id)
         if isinstance(item, WorkflowNodeItem):
             item.setBrush(pg.mkBrush("#2f5d9b"))
         self._log(f"[RUN] {node_id}")
 
     def _on_exec_node_finished(self, node_id, result):
-        item = self.scene.node_items.get(node_id)
+        scene = self._running_workflow_page.scene if self._running_workflow_page is not None else self.scene
+        item = scene.node_items.get(node_id)
         if isinstance(item, WorkflowNodeItem):
             item.setBrush(pg.mkBrush("#2a7d46"))
         self._latest_results[node_id] = result
@@ -370,12 +471,14 @@ class WorkflowTab(QWidget):
         self._log(f"[OK] {node_id} -> {result}")
 
     def _on_exec_node_failed(self, node_id, err):
-        item = self.scene.node_items.get(node_id)
+        scene = self._running_workflow_page.scene if self._running_workflow_page is not None else self.scene
+        item = scene.node_items.get(node_id)
         if isinstance(item, WorkflowNodeItem):
             item.setBrush(pg.mkBrush("#8d2d2d"))
         self._log(f"[ERR] {node_id} -> {err}")
 
     def _on_exec_finished(self):
+        self._running_workflow_page = None
         self._log("工作流执行结束。")
 
     def _on_plot_payload(self, payload):
