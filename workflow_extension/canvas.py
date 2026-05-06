@@ -5,7 +5,7 @@ import re
 from decimal import Decimal, InvalidOperation
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer, QEvent, QObject
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QKeySequence
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QKeySequence, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QPushButton,
     QApplication,
+    QFileDialog,
 )
 
 from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
@@ -491,8 +492,65 @@ class WorkflowNodeItem(QGraphicsRectItem):
             editor.editingFinished.connect(
                 lambda e=editor, key=p.key: self._set_param_value(key, e.text().strip())
             )
-            form.addRow(p.label, editor)
+            if self._is_device_select_file_param(p.key):
+                editor_row = self._create_file_path_editor_row(editor, p.key)
+                form.addRow(p.label, editor_row)
+            else:
+                form.addRow(p.label, editor)
             self._param_editors[p.key] = editor
+
+    def _is_device_select_file_param(self, key):
+        return self.model.node_type == "device.select" and key in {
+            "exp_config_path",
+            "sys_config_path",
+            "lockin_port",
+            "log_path",
+        }
+
+    def _create_file_path_editor_row(self, editor, key):
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        browse_btn = QPushButton()
+        browse_btn.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        browse_btn.setFixedWidth(32)
+        browse_btn.setToolTip("选择文件")
+        browse_btn.clicked.connect(lambda: self._browse_file_path(editor, key))
+        layout.addWidget(editor, 1)
+        layout.addWidget(browse_btn)
+        return row
+
+    def _browse_file_path(self, editor, key):
+        current_path = editor.text().strip()
+        file_path, _ = QFileDialog.getOpenFileName(
+            editor,
+            "选择文件",
+            current_path,
+            "所有文件 (*)",
+        )
+        if not file_path:
+            return
+        
+        # 判断文件是否在项目目录内，如果在则保存相对路径，否则保存绝对路径
+        import os
+        project_root = os.path.abspath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        file_path_abs = os.path.abspath(file_path)
+        
+        try:
+            relative_path = os.path.relpath(file_path_abs, project_root)
+            if not relative_path.startswith('..'):
+                # 文件在项目目录内，使用相对路径
+                display_path = relative_path.replace('\\', '/')
+            else:
+                # 文件在项目目录外，使用绝对路径
+                display_path = file_path_abs.replace('\\', '/')
+        except ValueError:
+            # 跨驱动器等情况，使用绝对路径
+            display_path = file_path_abs.replace('\\', '/')
+        
+        editor.setText(display_path)
+        self._set_param_value(key, display_path)
 
     @staticmethod
     def _extract_numeric(value, default=0.0):
