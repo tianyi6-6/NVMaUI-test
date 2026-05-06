@@ -1751,7 +1751,8 @@ class WorkflowCanvasView(QGraphicsView):
             event.accept()
             return
         elif event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
-            super().keyPressEvent(event)
+            self.scene().delete_selected_with_undo()
+            event.accept()
             return
         
         super().keyPressEvent(event)
