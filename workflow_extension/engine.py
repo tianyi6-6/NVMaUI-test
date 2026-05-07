@@ -12,6 +12,7 @@
 
 from collections import defaultdict, deque
 from typing import Dict, List
+import logging
 
 from PySide6.QtCore import QCoreApplication, QObject, Signal
 
@@ -73,6 +74,9 @@ class WorkflowExecutor(QObject):
         
         # 初始化输出数据字典
         outputs: Dict[str, object] = {}
+        
+        # 创建节点ID到节点的映射，方便查找
+        nodes_by_id = {node.node_id: node for node in graph.nodes}
 
         # 按顺序执行节点
         for node in order:
@@ -96,9 +100,24 @@ class WorkflowExecutor(QObject):
                 for edge in graph.edges:
                     if edge.to_node == node.node_id and edge.from_node in outputs:
                         node_inputs[edge.to_port] = outputs[edge.from_node]
+                        # 记录数据传递
+                        from_node = nodes_by_id.get(edge.from_node)
+                        if from_node:
+                            data_value = outputs[edge.from_node]
+                            data_str = str(data_value) if data_value is not None else "None"
+                            if len(data_str) > 50:
+                                data_str = data_str[:50] + "..."
+                            logging.info("[Workflow] 数据传递: %s -> %s.%s (数据: %s)", from_node.title, node.title, edge.to_port, data_str)
+                
+                # 记录节点执行开始
+                logging.info("[Workflow] 开始执行节点: %s (类型: %s)", node.title, node.node_type)
                 
                 # 执行节点逻辑
                 result = spec.executor(context, node, node_inputs) if spec.executor else {}
+                
+                # 记录节点输出
+                if result:
+                    logging.info("[Workflow] 节点 %s 输出: %s", node.title, str(result)[:100] if len(str(result)) > 100 else str(result))
                 
                 # 保存输出结果
                 outputs[node.node_id] = result

@@ -7,6 +7,7 @@
 
 import copy
 import uuid
+import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any
 from dataclasses import dataclass
@@ -108,7 +109,8 @@ class DeleteNodesCommand(WorkflowCommand):
                 # 保存相关连接信息
                 for edge in list(scene.edges):
                     if edge[0] == node_id or edge[2] == node_id:
-                        self.deleted_edges.append(copy.deepcopy(edge))
+                        # 只保存edge数据，不保存Qt对象（edge[4]是WorkflowEdgeItem，无法deepcopy）
+                        self.deleted_edges.append((edge[0], edge[1], edge[2], edge[3]))
         
         # 执行删除
         for node_id in self.node_ids:
@@ -128,23 +130,24 @@ class DeleteNodesCommand(WorkflowCommand):
     
     def undo(self, scene):
         """撤销删除节点"""
+        from PySide6.QtCore import QPointF
         # 恢复节点
         for node_info in self.deleted_nodes:
             model = node_info['model']
             spec = node_info['spec']
+            # 使用保存的位置创建QPointF对象
+            pos = QPointF(model.position[0], model.position[1])
             item = scene.add_node(
                 node_type=model.node_type,
                 title=model.title,
-                pos=scene.mapFromScene or None,
+                pos=pos,
                 params=model.params,
                 node_id=model.node_id
             )
-            if item:
-                item.setPos(model.position[0], model.position[1])
         
         # 恢复连接
         for edge_info in self.deleted_edges:
-            from_id, from_port, to_id, to_port, _ = edge_info
+            from_id, from_port, to_id, to_port = edge_info
             src_item = scene.node_items.get(from_id)
             dst_item = scene.node_items.get(to_id)
             if src_item and dst_item:
@@ -326,6 +329,7 @@ class WorkflowUndoStack(QObject):
             self.redo_stack.append(command)
             self._update_signals()
             self.stack_changed.emit()
+            logging.info("[Workflow] 已撤销操作")
         
         return success
     
@@ -341,6 +345,7 @@ class WorkflowUndoStack(QObject):
             self.undo_stack.append(command)
             self._update_signals()
             self.stack_changed.emit()
+            logging.info("[Workflow] 已重做操作")
         
         return success
     

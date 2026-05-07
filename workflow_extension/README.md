@@ -230,12 +230,76 @@ sequenceDiagram
 - 双图显示面板
 - 控制按钮
 
-#### 4. 画布编辑器 (`canvas.py`)
-提供节点编辑和连接功能：
-- 节点创建、删除、移动
-- 端口连接和断开
-- 参数编辑
-- 参数联动（`on_param_change`回调）
+#### 4. 画布编辑器 (`canvas/`)
+
+**重构说明**：画布编辑器已从单一`canvas.py`文件重构为模块化的`canvas/`目录结构，提高了代码的可维护性和可扩展性。
+
+**目录结构**：
+```
+canvas/
+├── __init__.py              # 模块初始化文件
+├── items/                   # 图形项子模块
+│   ├── __init__.py
+│   ├── edge_item.py         # 连接线图形项
+│   └── node_item.py         # 节点图形项
+├── scene.py                 # 场景管理器
+├── view.py                  # 视图管理器
+└── widgets/                 # 自定义控件子模块
+    ├── __init__.py
+    ├── high_precision_spinbox.py   # 高精度数值输入控件
+    ├── title_edit_filter.py        # 标题编辑事件过滤器
+    └── wheel_combo_box.py          # 滚轮优化的下拉框
+```
+
+**模块职责**：
+
+- **`canvas/scene.py`** (`WorkflowScene`)
+  - 管理工作流场景中的所有节点和连接
+  - 处理节点的添加、删除、移动
+  - 处理连接的创建、删除、重连
+  - 实现端口检测和兼容性检查
+  - 支持线段拖拽重连功能
+  - 提供撤销/重做系统集成
+
+- **`canvas/view.py`** (`WorkflowCanvasView`)
+  - 提供画布视图的缩放和平移功能
+  - 处理键盘事件（删除、撤销、重做快捷键）
+  - 处理滚轮事件（下拉菜单展开时优化滚轮行为）
+  - 处理鼠标事件（画布平移）
+  - 焦点管理（区分节点编辑和画布操作）
+
+- **`canvas/items/node_item.py`** (`WorkflowNodeItem`)
+  - 节点的可视化表示和交互
+  - 参数编辑器构建和管理
+  - 端口位置计算和绘制
+  - 标题编辑功能
+  - 参数值更新和联动
+
+- **`canvas/items/edge_item.py`** (`WorkflowEdgeItem`)
+  - 连接线的可视化表示
+  - 贝塞尔曲线绘制
+  - 连接线位置动态更新
+  - 临时连接线支持
+
+- **`canvas/widgets/high_precision_spinbox.py`** (`HighPrecisionSpinBox`)
+  - 高精度数值输入控件
+  - 支持上下箭头和键盘上下键增减
+  - 使用字符串/Decimal存储避免精度丢失
+  - 显示自动去零（10.000000显示为10）
+
+- **`canvas/widgets/title_edit_filter.py`** (`TitleEditEventFilter`)
+  - 标题编辑框的事件过滤器
+  - 处理Enter完成、Escape取消编辑
+
+- **`canvas/widgets/wheel_combo_box.py`** (`WheelComboBox`)
+  - 下拉菜单展开时滚轮优先滚动列表而非缩放画布
+
+**重构优势**：
+1. **模块化**：将单一大型文件拆分为多个职责明确的模块，便于维护
+2. **可扩展性**：新增图形项或控件时只需添加对应文件，不影响其他模块
+3. **代码复用**：自定义控件可在其他地方复用
+4. **可读性**：每个文件专注于特定功能，代码更易理解
+5. **测试友好**：模块化设计便于单元测试
 
 #### 5. 撤销重做系统 (`undo_system.py`)
 实现命令模式的撤销重做功能：
@@ -258,7 +322,7 @@ sequenceDiagram
 - `save_workflow`：保存工作流
 - `load_workflow`：加载工作流
 - `export_json`：导出JSON格式
-- `export_python`：导出Python代码
+- `load_json`：加载JSON格式
 
 ## 核心文件接口和类说明
 
@@ -355,16 +419,16 @@ sequenceDiagram
   - `nodes` (List[WorkflowNodeModel]): 所有节点的列表
   - `edges` (List[WorkflowEdgeModel]): 所有连接边的列表
 
-### 4. 画布编辑器 (`canvas.py`)
+### 4. 画布编辑器 (`canvas/`)
 
 #### 类说明
 
-**`TitleEditEventFilter`**
+**`TitleEditEventFilter`** (`canvas/widgets/title_edit_filter.py`)
 - **作用**：标题编辑框的事件过滤器
 - **方法**：
   - `eventFilter(obj, event)`: 过滤键盘事件（Enter完成，Escape取消）
 
-**`HighPrecisionSpinBox`**
+**`HighPrecisionSpinBox`** (`canvas/widgets/high_precision_spinbox.py`)
 - **作用**：通用高精度数值输入控件，用于所有int/float参数
 - **特性**：
   - 右侧上下箭头按钮：点击可按step增减数值
@@ -378,11 +442,13 @@ sequenceDiagram
   - `text()`: 获取当前文本值
   - `setText(value)`: 设置文本值（自动格式化显示）
   - `step_by(direction)`: 按方向增减数值（direction为1或-1）
-  - `_commit_text()`: 提交文本输入，验证范围并格式化
-  - `_to_decimal(value)`: 将值转换为Decimal
-  - `_format_decimal_text(value)`: 格式化数值文本（去掉末尾无意义的0）
 
-**`WorkflowNodeItem`**
+**`WheelComboBox`** (`canvas/widgets/wheel_combo_box.py`)
+- **作用**：下拉菜单展开时滚轮优先滚动列表而非缩放画布
+- **方法**：
+  - `_set_popup_opened(opened)`: 设置下拉菜单展开状态
+
+**`WorkflowNodeItem`** (`canvas/items/node_item.py`)
 - **作用**：工作流节点的可视化表示
 - **主要方法**：
   - `_build_param_widget()`: 构建参数编辑器
@@ -392,26 +458,41 @@ sequenceDiagram
   - `_start_edit_title()`: 开始编辑标题
   - `_finish_edit_title()`: 完成编辑标题
   - `_cancel_edit_title()`: 取消编辑标题
+  - `anchor(port_name, is_output)`: 获取端口锚点位置
+  - `port_at_scene_pos(scene_pos, require_output)`: 检测场景位置是否命中端口
+  - `paint(painter, option, widget)`: 绘制节点
 
-**`WorkflowEdgeItem`**
+**`WorkflowEdgeItem`** (`canvas/items/edge_item.py`)
 - **作用**：节点连接的可视化表示
 - **主要方法**：
-  - `update_position()`: 更新连接位置
+  - `set_temp_target(point)`: 设置临时目标点（拖拽时）
+  - `refresh_path()`: 刷新连接线路径
 
-**`WorkflowScene`**
+**`WorkflowScene`** (`canvas/scene.py`)
 - **作用**：工作流场景，管理所有节点和连接
 - **主要方法**：
-  - `add_node()`: 添加节点
-  - `delete_nodes()`: 删除节点
-  - `add_edge()`: 添加连接
-  - `remove_edge()`: 删除连接
+  - `add_node_with_undo(node_type, title, pos, params, node_id)`: 通过撤销系统添加节点
+  - `add_node(node_type, title, pos, params, node_id)`: 添加节点
+  - `delete_selected_with_undo()`: 通过撤销系统删除选中节点
+  - `delete_selected()`: 删除选中节点
   - `build_graph()`: 构建图模型
+  - `load_graph(graph)`: 加载图模型
+  - `begin_drag_link_at(scene_pos)`: 开始拖拽连线
+  - `update_drag_link_to(scene_pos)`: 更新拖拽连线位置
+  - `finish_drag_link_at(scene_pos)`: 完成拖拽连线
+  - `_add_edge_with_undo(src_item, src_port, dst_item, dst_port)`: 通过撤销系统添加连接
+  - `_remove_edge_with_undo(edge_item)`: 通过撤销系统删除连接
+  - `_find_port_hit(pos, require_output)`: 查找端口命中
+  - `_is_port_compatible(src_item, src_port, dst_item, dst_port)`: 检查端口兼容性
 
-**`WorkflowCanvasView`**
+**`WorkflowCanvasView`** (`canvas/view.py`)
 - **作用**：工作流画布视图
 - **主要方法**：
-  - `wheelEvent(event)`: 处理滚轮缩放
-  - `contextMenuEvent(event)`: 处理右键菜单
+  - `wheelEvent(event)`: 处理滚轮缩放（下拉菜单展开时优化）
+  - `keyPressEvent(event)`: 处理键盘快捷键（删除、撤销、重做）
+  - `mousePressEvent(event)`: 处理鼠标按下（画布平移）
+  - `mouseMoveEvent(event)`: 处理鼠标移动（画布平移）
+  - `mouseReleaseEvent(event)`: 处理鼠标释放（画布平移）
 
 ### 5. 工作流标签页 (`workflow_tab.py`)
 
@@ -849,7 +930,7 @@ NodeSpec(
 用户通过拖拽创建连线，系统自动检查端口兼容性：
 
 ```python
-# canvas.py
+# canvas/scene.py
 def _add_edge(self, src_item, src_port, dst_item, dst_port):
     # 检查目标端口是否已被占用（一个输入端口只能有一个连接）
     for edge in list(self.edges):
@@ -876,7 +957,7 @@ def _add_edge(self, src_item, src_port, dst_item, dst_port):
 连接前系统会自动检查端口类型是否匹配：
 
 ```python
-# canvas.py
+# canvas/scene.py
 def _is_port_compatible(self, src_item, src_port, dst_item, dst_port):
     src_t = self._port_type(src_item.spec, src_port, output=True)
     dst_t = self._port_type(dst_item.spec, dst_port, output=False)
@@ -1053,8 +1134,8 @@ def register_my_nodes(registry):
 在 `builtins.py` 中注册节点：
 
 ```python
-from workflow_extension.node.my_nodes import register_my_nodes
-register_my_nodes(registry)
+from workflow_extension.node.my_custom_nodes import register_my_custom_nodes
+register_my_custom_nodes(registry)
 ```
 
 #### 3. 实现实时显示（可选）
@@ -1099,21 +1180,33 @@ workflow_extension/
 ├── README.md                    # 本文档
 ├── __init__.py                  # 包初始化
 ├── builtins.py                  # 内置节点注册
-├── canvas.py                    # 画布编辑器
+├── canvas/                      # 画布编辑器目录
+│   ├── __init__.py
+│   ├── items/                   # 图形项子模块
+│   │   ├── __init__.py
+│   │   ├── edge_item.py         # 连接线图形项
+│   │   └── node_item.py         # 节点图形项
+│   ├── scene.py                 # 场景管理器
+│   ├── view.py                  # 视图管理器
+│   └── widgets/                 # 自定义控件子模块
+│       ├── __init__.py
+│       ├── high_precision_spinbox.py   # 高精度数值输入控件
+│       ├── title_edit_filter.py        # 标题编辑事件过滤器
+│       └── wheel_combo_box.py          # 滚轮优化的下拉框
 ├── engine.py                    # 工作流执行引擎
 ├── models.py                    # 工作流数据模型
+├── node/                        # 节点实现目录
+│   ├── all_optical_nodes.py     # 全光谱采集节点
+│   ├── cw_nodes.py              # CW谱采集节点
+│   ├── data_visualization_nodes.py  # 数据可视化节点
+│   ├── device_init_node.py      # 设备初始化节点
+│   ├── device_select_nodes.py   # 设备选择节点
+│   ├── iir_nodes.py             # IIR谱采集节点
+│   └── ultramotor_nodes.py      # 超声电机节点
 ├── node_registry.py             # 节点注册系统
 ├── serializer.py                # 工作流序列化器
 ├── undo_system.py               # 撤销重做系统
-├── workflow_tab.py              # 工作流标签页
-└── node/                        # 节点实现目录
-    ├── all_optical_nodes.py     # 全光谱采集节点
-    ├── cw_nodes.py              # CW谱采集节点
-    ├── data_visualization_nodes.py  # 数据可视化节点
-    ├── device_init_node.py      # 设备初始化节点
-    ├── device_select_nodes.py   # 设备选择节点
-    ├── iir_nodes.py             # IIR谱采集节点
-    └── ultramotor_nodes.py      # 超声电机节点
+└── workflow_tab.py              # 工作流标签页
 ```
 
 ## 示例工作流
