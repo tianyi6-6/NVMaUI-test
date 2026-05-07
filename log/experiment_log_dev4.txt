@@ -1129,10 +1129,3 @@
 2025-07-28 21:51:57,580 - [INFO] - root - 结束全光谱数据采集。荧光最高点角度：15 °
 荧光最高点值：133.14292430877686 mV
 2025-07-28 21:51:57,580 - [INFO] - root - 结束全光荧光数据采集。
-2025-11-05 09:34:47,125 - [INFO] - root - 日志系统已初始化 - 设备: 样机4 (WR05-01)
-2025-11-05 09:34:47,125 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
-2025-11-05 09:34:47,126 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
-2025-11-05 09:35:00,612 - [DEBUG] - root - 尝试连接设备。
-2025-11-05 09:35:00,628 - [DEBUG] - root - 设备连接失败。[Could not find module '192.168.3.101:5005' (or one of its dependencies). Try using the full path with constructor syntax.]
-2025-11-05 09:35:09,671 - [DEBUG] - root - 尝试连接设备。
-2025-11-05 09:35:09,672 - [DEBUG] - root - 设备连接失败。[Could not find module '192.168.3.101:5005' (or one of its dependencies). Try using the full path with constructor syntax.]

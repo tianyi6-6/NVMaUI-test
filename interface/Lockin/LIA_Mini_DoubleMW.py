@@ -113,9 +113,9 @@ class USBController:
         self.close_device()
 
     def __del__(self):
-        if self.handle:
+        if hasattr(self, 'handle') and self.handle:
             self.libusb.libusb_close(self.handle)
-        if self.ctx:
+        if hasattr(self, 'ctx') and self.ctx:
             self.libusb.libusb_exit(self.ctx)
 
     def open_device(self, *args, **kwargs):

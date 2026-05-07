@@ -71,11 +71,8 @@ class WorkflowExecutor(QObject):
         # 计算节点执行顺序（拓扑排序）
         order = self._topological_order(graph)
         
-        # 初始化输出数据字典和输入依赖映射
+        # 初始化输出数据字典
         outputs: Dict[str, object] = {}
-        incoming: Dict[str, List[str]] = defaultdict(list)
-        for edge in graph.edges:
-            incoming[edge.to_node].append(edge.from_node)
 
         # 按顺序执行节点
         for node in order:
@@ -94,8 +91,11 @@ class WorkflowExecutor(QObject):
                 # 获取节点规范
                 spec = self.registry.get(node.node_type)
                 
-                # 收集输入数据
-                node_inputs = [outputs[nid] for nid in incoming.get(node.node_id, []) if nid in outputs]
+                # 收集输入数据（构建端口名到数据的映射字典）
+                node_inputs = {}
+                for edge in graph.edges:
+                    if edge.to_node == node.node_id and edge.from_node in outputs:
+                        node_inputs[edge.to_port] = outputs[edge.from_node]
                 
                 # 执行节点逻辑
                 result = spec.executor(context, node, node_inputs) if spec.executor else {}

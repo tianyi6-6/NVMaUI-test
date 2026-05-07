@@ -373,14 +373,7 @@ class OscilloscopeIIRPanel(QWidget):
         path = self.parent.save_dir + gettimestr() + '_iir_noise.csv'
         if path:
             arr = np.column_stack((self.full_time_data, self.full_data1, self.full_data2))
-            np.savetxt(path, arr, delimiter=",", header=f"%采样率={self.parent.param_config['lockin_sample_rate']['value']}Hz\n"
-                              f"%磁场-电压转换系数={self.parent.param_config['nv_volt_to_tesla_coe']['value']} T/V\n"
-                              f"%等效旋磁比={self.parent.param_config['nv_eff_gyromagnetic_ratio']['value']} Hz/T\n"
-                              f"%一阶微分谱斜率={self.parent.param_config['nv_cw_slope']['value']} V/Hz\n"
-                              f"%开始采集时间={self.get_start_time()}\n"
-                              f"%IIR模式增益系数={self.parent.param_config['lockin_iir_gain']['value']} V\n"
-                              f"%Time (s), CH1(Hz), CH2(Hz)",
-                       comments='% ')
+            np.savetxt(path, arr, delimiter=",")
             QMessageBox.information(self, "保存成功", f"IIR模式数据已保存为 {path}")
 
     def save_image(self):

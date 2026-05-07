@@ -1,8 +1,11 @@
 import uuid
 import logging
+from functools import partial
+import re
+from decimal import Decimal, InvalidOperation
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer, QEvent, QObject
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QKeySequence
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QKeySequence, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -19,6 +22,12 @@ from PySide6.QtWidgets import (
     QWidget,
     QLabel,
     QStyle,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QPushButton,
+    QApplication,
+    QFileDialog,
 )
 
 from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
@@ -49,12 +58,126 @@ class TitleEditEventFilter(QObject):
         return super().eventFilter(obj, event)
 
 
+class WheelComboBox(QComboBox):
+    def __init__(self, node_item=None, parent=None):
+        super().__init__(parent)
+        self._node_item = node_item
+
+    def _set_popup_opened(self, opened):
+        try:
+            scene = self._node_item.scene() if self._node_item is not None else None
+            if scene is not None:
+                scene._combo_box_opened = opened
+                scene._active_combo_box = self if opened else None
+        except:
+            pass
+
+    def showPopup(self):
+        self._set_popup_opened(True)
+        super().showPopup()
+
+    def hidePopup(self):
+        super().hidePopup()
+        self._set_popup_opened(False)
+
+
+class HighPrecisionSpinBox(QWidget):
+    valueChanged = Signal(str)
+
+    def __init__(self, value="0", minimum=None, maximum=None, step="1", integer=False, parent=None):
+        super().__init__(parent)
+        self._minimum = self._to_decimal(minimum) if minimum is not None else None
+        self._maximum = self._to_decimal(maximum) if maximum is not None else None
+        self._step = self._to_decimal(step) if step is not None else Decimal("1")
+        self._integer = bool(integer)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._edit = QLineEdit(self._format_decimal_text(value))
+        self._edit.installEventFilter(self)
+        self._edit.editingFinished.connect(self._commit_text)
+        layout.addWidget(self._edit, 1)
+
+        button_panel = QWidget()
+        button_layout = QVBoxLayout(button_panel)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(0)
+
+        self._up_button = QPushButton("▲")
+        self._down_button = QPushButton("▼")
+        for button in (self._up_button, self._down_button):
+            button.setFixedSize(18, 11)
+            button.setFocusPolicy(Qt.NoFocus)
+            button.setStyleSheet("QPushButton { padding: 0px; font-size: 8px; }")
+            button_layout.addWidget(button)
+
+        layout.addWidget(button_panel)
+        self._up_button.clicked.connect(lambda: self.step_by(1))
+        self._down_button.clicked.connect(lambda: self.step_by(-1))
+
+    def text(self):
+        return self._edit.text()
+
+    def setText(self, value):
+        self._edit.setText(self._format_decimal_text(value))
+
+    def eventFilter(self, obj, event):
+        if obj is self._edit and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Up:
+                self.step_by(1)
+                return True
+            if event.key() == Qt.Key_Down:
+                self.step_by(-1)
+                return True
+        return super().eventFilter(obj, event)
+
+    def step_by(self, direction):
+        value = self._to_decimal(self._edit.text())
+        value += self._step * Decimal(direction)
+        if self._minimum is not None:
+            value = max(self._minimum, value)
+        if self._maximum is not None:
+            value = min(self._maximum, value)
+        self._edit.setText(self._format_decimal_text(value))
+        self.valueChanged.emit(self._edit.text().strip())
+
+    def _commit_text(self):
+        text = self._edit.text().strip()
+        if not text:
+            text = "0"
+        value = self._to_decimal(text)
+        if self._minimum is not None:
+            value = max(self._minimum, value)
+        if self._maximum is not None:
+            value = min(self._maximum, value)
+        if self._integer:
+            value = value.to_integral_value()
+        committed = self._format_decimal_text(value)
+        self._edit.setText(committed)
+        self.valueChanged.emit(committed)
+
+    @staticmethod
+    def _to_decimal(value):
+        text = WorkflowNodeItem._extract_numeric_text(value, "0")
+        try:
+            return Decimal(text)
+        except InvalidOperation:
+            return Decimal("0")
+
+    @staticmethod
+    def _format_decimal_text(value):
+        return WorkflowNodeItem._trim_decimal_zeros(WorkflowNodeItem._extract_numeric_text(value, "0"))
+
+
 class WorkflowNodeItem(QGraphicsRectItem):
-    def __init__(self, model: WorkflowNodeModel, spec: NodeSpec, on_param_changed=None):
+    def __init__(self, model: WorkflowNodeModel, spec: NodeSpec, on_param_changed=None, enable_extended_node_ui=False):
         super().__init__(0, 0, 280, 180)
         self.model = model
         self.spec = spec
         self._on_param_changed = on_param_changed
+        self._enable_extended_node_ui = bool(enable_extended_node_ui)
         self.setPos(QPointF(model.position[0], model.position[1]))
         self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
@@ -65,63 +188,527 @@ class WorkflowNodeItem(QGraphicsRectItem):
         self._input_ports = {}
         self._output_ports = {}
         self._proxy = None
+        self._param_editors = {}  # 存储参数编辑器的引用
+        self._min_node_width = 260
+        self._min_node_height = 130
+        self._max_node_width = 920
+        self._max_node_height = 2000
+        self._resize_handle_size = 14
+        self._is_resizing = False
+        self._resize_start_scene_pos = None
+        self._resize_start_size = (280, 180)
+        self._user_resized = bool(self.model.params.get("__node_user_resized__", False)) and self._enable_extended_node_ui
         # 新增：标题编辑相关
         self._title_edit_proxy = None
         self._title_edit_widget = None
         self._is_editing_title = False
         self._edit_event_filter = None  # 事件过滤器
+        self.setAcceptHoverEvents(self._enable_extended_node_ui)
         self._build_param_widget()
+        if self._enable_extended_node_ui:
+            saved_size = self.model.params.get("__node_size__")
+            if isinstance(saved_size, (list, tuple)) and len(saved_size) == 2:
+                try:
+                    self._apply_node_size(float(saved_size[0]), float(saved_size[1]), user_resized=True)
+                    self._user_resized = True
+                except (TypeError, ValueError):
+                    pass
         self._rebuild_ports()
 
     def _build_param_widget(self):
         if self._proxy is not None:
-            self.scene().removeItem(self._proxy)
+            scene = self.scene()
+            if scene is not None:
+                scene.removeItem(self._proxy)
             self._proxy = None
         card = QWidget()
-        form = QFormLayout(card)
-        form.setContentsMargins(8, 4, 8, 4)
-        form.setSpacing(4)
         specs = self.spec.param_specs if self.spec else []
-        for p in specs[:4]:
-            current = self.model.params.get(p.key, "")
-            if p.editor == "int":
-                editor = QSpinBox()
-                editor.setRange(int(p.minimum), int(p.maximum))
-                editor.setSingleStep(int(max(1, p.step)))
-                editor.setValue(int(current))
-                editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
-            elif p.editor == "float":
-                editor = QDoubleSpinBox()
-                editor.setDecimals(6)
-                editor.setRange(float(p.minimum), float(p.maximum))
-                editor.setSingleStep(float(p.step))
-                editor.setValue(float(current))
-                editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
-            elif p.editor == "select":
-                editor = QComboBox()
-                editor.addItems([str(x) for x in p.options])
-                idx = editor.findText(str(current))
-                editor.setCurrentIndex(max(idx, 0))
-                editor.currentTextChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
-            elif p.editor == "bool":
-                editor = QCheckBox()
-                editor.setChecked(bool(current))
-                editor.toggled.connect(lambda v, key=p.key: self._set_param_value(key, v))
+        
+        if self._enable_extended_node_ui:
+            # 检查是否有参数设置了 category
+            has_category = any(p.category for p in specs)
+            
+            main_layout = QVBoxLayout(card)
+            main_layout.setContentsMargins(8, 4, 8, 4)
+            main_layout.setSpacing(6)
+            
+            if has_category:
+                # 按层级分组参数（一级分类 -> 二级分类 -> 参数项）
+                categories = {}
+                for p in specs:
+                    category = p.category or "未分类"
+                    subcategory = p.subcategory or "默认项"
+                    if category not in categories:
+                        categories[category] = {}
+                    if subcategory not in categories[category]:
+                        categories[category][subcategory] = []
+                    categories[category][subcategory].append(p)
+                
+                for category_name, subgroups in categories.items():
+                    group = QGroupBox(category_name)
+                    group.setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #ccc; margin-top: 10px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px; }")
+                    group_layout = QVBoxLayout()
+                    selector_row = QHBoxLayout()
+                    is_device_init_node = self.model.node_type == "device.connect"
+                    selector_label = QLabel("实验参数" if is_device_init_node else "二级分类")
+                    selector = WheelComboBox(self)
+                    subcategory_names = list(subgroups.keys())
+                    selector.addItems(subcategory_names)
+                    selector_row.addWidget(selector_label)
+                    selector_row.addWidget(selector)
+                    group_layout.addLayout(selector_row)
+
+                    sub_params_container = QWidget()
+                    sub_params_layout = QFormLayout(sub_params_container)
+                    sub_params_layout.setContentsMargins(0, 0, 0, 0)
+                    sub_params_layout.setSpacing(4)
+                    group_layout.addWidget(sub_params_container)
+
+                    selected_key = (
+                        f"__selected_experiment_param__::{category_name}"
+                        if is_device_init_node
+                        else f"__selected_subcategory__::{category_name}"
+                    )
+                    legacy_key = f"__selected_subcategory__::{category_name}"
+                    saved_subcategory = str(self.model.params.get(selected_key, self.model.params.get(legacy_key, "")))
+                    default_subcategory = saved_subcategory if saved_subcategory in subcategory_names else subcategory_names[0]
+                    selector.setCurrentText(default_subcategory)
+                    self.model.params[selected_key] = default_subcategory
+
+                    self._fill_subcategory_form(
+                        sub_params_layout,
+                        subgroups.get(default_subcategory, []),
+                    )
+                    selector.currentTextChanged.connect(
+                        partial(
+                            self._on_subcategory_changed,
+                            selected_key,
+                            subgroups,
+                            sub_params_layout,
+                        )
+                    )
+
+                    group.setLayout(group_layout)
+                    main_layout.addWidget(group)
             else:
-                editor = QLineEdit(str(current))
-                editor.editingFinished.connect(
-                    lambda e=editor, key=p.key: self._set_param_value(key, e.text().strip())
+                # 没有设置 category 的参数，直接显示，不分组
+                form = QFormLayout()
+                form.setContentsMargins(0, 0, 0, 0)
+                form.setSpacing(4)
+                for p in specs:
+                    current = self.model.params.get(p.key, "")
+                    self._add_param_to_form(form, p, current)
+                main_layout.addLayout(form)
+
+            if any(p.device_param for p in specs):
+                apply_btn = QPushButton("应用本节点所有参数")
+                apply_btn.setStyleSheet(
+                    "QPushButton { background: #2f7fd9; color: white; border: 1px solid #2b74c7; padding: 4px 10px; border-radius: 4px; }"
+                    "QPushButton:hover { background: #3b8cea; }"
+                    "QPushButton:pressed { background: #296fbd; }"
                 )
-            form.addRow(p.label, editor)
+                apply_btn.clicked.connect(self._apply_device_pending_params)
+                main_layout.addWidget(apply_btn)
+                main_layout.addStretch(1)
+        else:
+            # 非扩展模式保持紧凑展示，避免影响其他标签页
+            form = QFormLayout(card)
+            form.setContentsMargins(8, 4, 8, 4)
+            form.setSpacing(4)
+            for p in specs[:4]:
+                current = self.model.params.get(p.key, "")
+                self._add_param_to_form(form, p, current)
+        
         self._proxy = QGraphicsProxyWidget(self)
         self._proxy.setWidget(card)
         self._proxy.setPos(6, self._header_h + 26)
         self._proxy.setZValue(2)
-        target_h = max(130, self._header_h + 36 + card.sizeHint().height())
-        self.setRect(0, 0, 280, target_h)
+        if self._enable_extended_node_ui:
+            self._resize_proxy_widget()
+            hint_w = card.sizeHint().width() + 22
+            hint_h = self._header_h + 36 + card.sizeHint().height()
+            if not self._user_resized:
+                self._apply_node_size(hint_w, hint_h, user_resized=False)
+            else:
+                cur = self.rect()
+                self._apply_node_size(cur.width(), max(cur.height(), hint_h), user_resized=True)
+        else:
+            target_h = max(130, self._header_h + 36 + card.sizeHint().height())
+            self.setRect(0, 0, 280, target_h)
+    
+    def _add_param_to_form(self, form, p, current):
+        """将参数添加到表单布局"""
+        if p.device_param:
+            # 设备参数：统一展示“当前值 / 范围 / 设置值”
+            param_widget = QWidget()
+            param_widget.setObjectName("deviceParamContainer")
+            param_layout = QVBoxLayout(param_widget)
+            param_layout.setContentsMargins(0, 0, 0, 0)
+            param_layout.setSpacing(3)
+            
+            # 第一行：当前值和范围
+            info_layout = QHBoxLayout()
+            info_layout.setSpacing(10)
+            
+            current_display = self._format_device_display_value(p.current_value, p.unit)
+            range_display = self._format_device_range(p.valid_range, p.unit)
+            current_label = QLabel(f"当前值: {current_display}")
+            current_label.setStyleSheet("color: #666; font-size: 10px;")
+            range_label = QLabel(f"合法范围: {range_display}")
+            range_label.setStyleSheet("color: #666; font-size: 10px;")
+            pending_label = QLabel("待应用")
+            pending_label.setStyleSheet(
+                "color: #ffffff; background: #e67e22; font-size: 10px; padding: 1px 6px; border-radius: 7px;"
+            )
+            
+            info_layout.addWidget(current_label)
+            info_layout.addWidget(range_label)
+            info_layout.addStretch(1)
+            info_layout.addWidget(pending_label)
+            param_layout.addLayout(info_layout)
+            
+            # 第二行：设置值（可编辑）
+            input_layout = QHBoxLayout()
+            input_layout.setSpacing(5)
+            set_label = QLabel("设置值:")
+            set_label.setStyleSheet("color: #444; font-size: 10px;")
+            input_layout.addWidget(set_label)
+            
+            if p.editor == "select":
+                editor = WheelComboBox(self)
+                editor.addItems([str(x) for x in p.options])
+                idx = editor.findText(str(current))
+                editor.setCurrentIndex(max(idx, 0))
+                editor.currentTextChanged.connect(
+                    lambda v, key=p.key: (self._set_param_value(key, v), _refresh_pending_state(v))
+                )
+            elif p.editor == "int":
+                editor = HighPrecisionSpinBox(
+                    current,
+                    minimum=p.minimum,
+                    maximum=p.maximum,
+                    step=p.step,
+                    integer=True,
+                    parent=self._proxy.widget() if self._proxy is not None else None,
+                )
+                # 整数和浮点数统一使用HighPrecisionSpinBox，避免Qt原生SpinBox的int32/float精度限制。
+                editor.valueChanged.connect(
+                    lambda v, key=p.key: (self._set_param_value(key, v), _refresh_pending_state(v))
+                )
+            elif p.editor == "float":
+                editor = HighPrecisionSpinBox(
+                    current,
+                    minimum=p.minimum,
+                    maximum=p.maximum,
+                    step=p.step,
+                    integer=False,
+                    parent=self._proxy.widget() if self._proxy is not None else None,
+                )
+                # 浮点参数底层用字符串/Decimal处理，用户输入任意小数位数都不会被float截断。
+                editor.valueChanged.connect(
+                    lambda v, key=p.key: (self._set_param_value(key, v), _refresh_pending_state(v))
+                )
+            else:
+                editor = QLineEdit(str(current))
+                editor.editingFinished.connect(
+                    lambda e=editor, key=p.key: (self._set_param_value(key, e.text().strip()), _refresh_pending_state(e.text().strip()))
+                )
+            
+            editor.setFixedWidth(120)
+            input_layout.addWidget(editor)
+            
+            if p.unit:
+                unit_label = QLabel(p.unit)
+                unit_label.setStyleSheet("color: #888; font-size: 10px;")
+                input_layout.addWidget(unit_label)
+            
+            input_layout.addStretch(1)
+            param_layout.addLayout(input_layout)
+
+            def _refresh_pending_state(new_value):
+                is_pending = self._is_device_value_pending(p, p.current_value, new_value)
+                pending_label.setVisible(is_pending)
+                if is_pending:
+                    param_widget.setStyleSheet(
+                        "#deviceParamContainer { background: #fff6eb; border: 1px solid #f0c083; border-radius: 4px; }"
+                    )
+                else:
+                    param_widget.setStyleSheet("#deviceParamContainer { background: transparent; border: none; }")
+
+            _refresh_pending_state(current)
+            form.addRow(p.label, param_widget)
+        elif p.editor == "bool":
+            # 布尔参数
+            editor = QCheckBox()
+            editor.setChecked(bool(current))
+            editor._param_key = p.key  # 存储参数键以便后续查找
+            editor.toggled.connect(lambda v, key=p.key: self._set_param_value(key, v))
+            form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
+        elif p.editor == "select":
+            # 下拉选择
+            editor = WheelComboBox(self)
+            editor.addItems([str(x) for x in p.options])
+            idx = editor.findText(str(current))
+            editor.setCurrentIndex(max(idx, 0))
+            editor._param_key = p.key  # 存储参数键以便后续查找
+            editor.currentTextChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
+            form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
+        elif p.editor == "int":
+            # 整数输入
+            editor = HighPrecisionSpinBox(
+                current,
+                minimum=p.minimum,
+                maximum=p.maximum,
+                step=p.step,
+                integer=True,
+                parent=self._proxy.widget() if self._proxy is not None else None,
+            )
+            # 整数和浮点数统一使用HighPrecisionSpinBox，避免Qt原生SpinBox的int32/float精度限制。
+            editor._param_key = p.key  # 存储参数键以便后续查找
+            editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
+            form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
+        elif p.editor == "float":
+            # 浮点数输入
+            editor = HighPrecisionSpinBox(
+                current,
+                minimum=p.minimum,
+                maximum=p.maximum,
+                step=p.step,
+                integer=False,
+                parent=self._proxy.widget() if self._proxy is not None else None,
+            )
+            # 浮点参数底层用字符串/Decimal处理，用户输入任意小数位数都不会被float截断。
+            editor._param_key = p.key  # 存储参数键以便后续查找
+            editor.valueChanged.connect(lambda v, key=p.key: self._set_param_value(key, v))
+            form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
+        else:
+            # 文本输入
+            editor = QLineEdit(str(current))
+            editor._param_key = p.key  # 存储参数键以便后续查找
+            editor.editingFinished.connect(
+                lambda e=editor, key=p.key: self._set_param_value(key, e.text().strip())
+            )
+            if self._is_device_select_file_param(p.key):
+                editor_row = self._create_file_path_editor_row(editor, p.key)
+                form.addRow(p.label, editor_row)
+            else:
+                form.addRow(p.label, editor)
+            self._param_editors[p.key] = editor
+
+    def _is_device_select_file_param(self, key):
+        return self.model.node_type == "device.select" and key in {
+            "exp_config_path",
+            "sys_config_path",
+            "lockin_port",
+            "log_path",
+        }
+
+    def _create_file_path_editor_row(self, editor, key):
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        browse_btn = QPushButton()
+        browse_btn.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        browse_btn.setFixedWidth(32)
+        browse_btn.setToolTip("选择文件")
+        browse_btn.clicked.connect(lambda: self._browse_file_path(editor, key))
+        layout.addWidget(editor, 1)
+        layout.addWidget(browse_btn)
+        return row
+
+    def _browse_file_path(self, editor, key):
+        current_path = editor.text().strip()
+        file_path, _ = QFileDialog.getOpenFileName(
+            editor,
+            "选择文件",
+            current_path,
+            "所有文件 (*)",
+        )
+        if not file_path:
+            return
+        
+        # 判断文件是否在项目目录内，如果在则保存相对路径，否则保存绝对路径
+        import os
+        project_root = os.path.abspath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        file_path_abs = os.path.abspath(file_path)
+        
+        try:
+            relative_path = os.path.relpath(file_path_abs, project_root)
+            if not relative_path.startswith('..'):
+                # 文件在项目目录内，使用相对路径
+                display_path = relative_path.replace('\\', '/')
+            else:
+                # 文件在项目目录外，使用绝对路径
+                display_path = file_path_abs.replace('\\', '/')
+        except ValueError:
+            # 跨驱动器等情况，使用绝对路径
+            display_path = file_path_abs.replace('\\', '/')
+        
+        editor.setText(display_path)
+        self._set_param_value(key, display_path)
+
+    @staticmethod
+    def _extract_numeric(value, default=0.0):
+        if value is None:
+            return default
+        text = str(value).strip()
+        match = re.search(r"[-+]?\d*\.?\d+", text)
+        if not match:
+            return default
+        try:
+            return float(match.group())
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _extract_numeric_text(value, default="0"):
+        text = "" if value is None else str(value).strip()
+        match = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", text)
+        return match.group() if match else str(default)
+
+    @staticmethod
+    def _trim_decimal_zeros(number_text):
+        try:
+            decimal_value = Decimal(str(number_text))
+        except (InvalidOperation, ValueError):
+            return str(number_text)
+        plain_text = format(decimal_value, "f")
+        if "." in plain_text:
+            plain_text = plain_text.rstrip("0").rstrip(".")
+        return plain_text or "0"
+
+    @staticmethod
+    def _format_decimal_text(value):
+        # 仅用于UI初始展示：自动去掉浮点数字符串末尾无意义的0，不改变用户后续手动输入的原始字符串。
+        return WorkflowNodeItem._trim_decimal_zeros(WorkflowNodeItem._extract_numeric_text(value, "0"))
+
+    @staticmethod
+    def _format_device_display_value(value, unit):
+        text = "" if value is None else str(value).strip()
+        if not text:
+            return "-"
+        number_text = WorkflowNodeItem._extract_numeric_text(text, "")
+        if number_text:
+            formatted_number = WorkflowNodeItem._trim_decimal_zeros(number_text)
+            return f"{formatted_number}{unit}" if unit else formatted_number
+        return text
+
+    @staticmethod
+    def _format_device_range(valid_range, unit):
+        text = "" if valid_range is None else str(valid_range).strip()
+        if not text:
+            return "-"
+        if unit and unit not in text:
+            if "-" in text:
+                start, end = text.split("-", 1)
+                return f"{start}{unit}-{end}{unit}"
+            return f"{text}{unit}"
+        return text
+
+    @staticmethod
+    def _is_device_value_pending(param_spec, current_value, input_value):
+        if param_spec.editor in {"int", "float"}:
+            try:
+                current_num = Decimal(WorkflowNodeItem._extract_numeric_text(current_value, "0"))
+                input_num = Decimal(WorkflowNodeItem._extract_numeric_text(input_value, "0"))
+                return current_num != input_num
+            except InvalidOperation:
+                return str(current_value).strip() != str(input_value).strip()
+        return str(current_value).strip() != str(input_value).strip()
+
+    def _clear_form_layout(self, form_layout):
+        while form_layout.count():
+            item = form_layout.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+                continue
+            child_layout = item.layout()
+            if child_layout is not None:
+                self._clear_form_layout(child_layout)
+
+    def _fill_subcategory_form(self, form_layout, param_specs):
+        self._clear_form_layout(form_layout)
+        for p in param_specs:
+            current = self.model.params.get(p.key, "")
+            self._add_param_to_form(form_layout, p, current)
+
+    def _on_subcategory_changed(self, selected_key, subgroups, form_layout, selected_subcategory):
+        self.model.params[selected_key] = selected_subcategory
+        self._fill_subcategory_form(form_layout, subgroups.get(selected_subcategory, []))
+        if self._enable_extended_node_ui:
+            self._resize_to_content_if_needed()
+        if self._on_param_changed:
+            self._on_param_changed(self.model)
 
     def _set_param_value(self, key, value):
         self.model.params[key] = value
+
+        # 处理参数依赖
+        if self.spec and hasattr(self.spec, 'on_param_change'):
+            if self.spec.on_param_change:
+                updates = self.spec.on_param_change(key, value, self.model.params)
+                if updates:
+                    for update_key, update_value in updates.items():
+                        if update_key != key:  # 避免循环更新
+                            self.model.params[update_key] = update_value
+                            # 更新UI中的对应编辑器
+                            self._update_param_editor(update_key, update_value)
+
+        if self._on_param_changed:
+            self._on_param_changed(self.model)
+
+    def _update_param_editor(self, key, value):
+        """更新UI中指定参数的编辑器值"""
+        # 从存储的编辑器字典中查找并更新
+        if key in self._param_editors:
+            widget = self._param_editors[key]
+            if isinstance(widget, HighPrecisionSpinBox):
+                widget.setText(value)
+            elif isinstance(widget, QLineEdit):
+                widget.setText(str(value))
+            elif isinstance(widget, QSpinBox):
+                widget.setValue(int(value))
+            elif isinstance(widget, QComboBox):
+                idx = widget.findText(str(value))
+                widget.setCurrentIndex(max(idx, 0))
+            elif isinstance(widget, QCheckBox):
+                widget.setChecked(bool(value))
+
+    def _apply_device_pending_params(self):
+        """将本节点设备参数的设置值应用为当前值。"""
+        updated = False
+        for p in (self.spec.param_specs if self.spec else []):
+            if not p.device_param:
+                continue
+            if p.key not in self.model.params:
+                continue
+            new_value = self.model.params[p.key]
+            if not self._is_device_value_pending(p, p.current_value, new_value):
+                continue
+            if p.editor == "int":
+                p.current_value = str(int(round(float(new_value))))
+            elif p.editor == "float":
+                # 设备浮点参数不转换为float，避免保存/应用时丢失高精度；仅当前值展示会自动去掉末尾0。
+                p.current_value = str(new_value).strip()
+            else:
+                p.current_value = str(new_value)
+            updated = True
+
+        if updated:
+            # 避免在按钮点击槽函数中立即销毁当前代理控件，导致Qt对象生命周期异常。
+            QTimer.singleShot(0, self._refresh_after_apply_pending)
+
+    def _refresh_after_apply_pending(self):
+        self._build_param_widget()
+        self._rebuild_ports()
         if self._on_param_changed:
             self._on_param_changed(self.model)
 
@@ -130,6 +717,53 @@ class WorkflowNodeItem(QGraphicsRectItem):
         if brush.style() != Qt.NoBrush:
             return brush.color()
         return QColor("#de6d1f")
+
+    def _resize_proxy_widget(self):
+        if not self._enable_extended_node_ui:
+            return
+        if self._proxy is None or self._proxy.widget() is None:
+            return
+        content_w = max(120, int(self.rect().width() - 12))
+        widget = self._proxy.widget()
+        widget.setMinimumWidth(content_w)
+        widget.setMaximumWidth(content_w)
+        widget.adjustSize()
+        self._proxy.resize(content_w, widget.sizeHint().height())
+
+    def _apply_node_size(self, width, height, user_resized=False):
+        if not self._enable_extended_node_ui:
+            return
+        width = max(self._min_node_width, min(float(width), self._max_node_width))
+        height = max(self._min_node_height, min(float(height), self._max_node_height))
+        self.setRect(0, 0, width, height)
+        self._resize_proxy_widget()
+        self._rebuild_ports()
+        if user_resized:
+            self._user_resized = True
+            self.model.params["__node_user_resized__"] = True
+            self.model.params["__node_size__"] = [round(width, 2), round(height, 2)]
+        if self.scene():
+            self.scene().update_edges_for_node(self.model.node_id)
+        self.update()
+
+    def _resize_to_content_if_needed(self):
+        if not self._enable_extended_node_ui:
+            return
+        if self._proxy is None or self._proxy.widget() is None:
+            return
+        widget = self._proxy.widget()
+        widget.adjustSize()
+        target_h = self._header_h + 36 + widget.sizeHint().height()
+        if self._user_resized:
+            self._apply_node_size(self.rect().width(), max(self.rect().height(), target_h), user_resized=True)
+        else:
+            target_w = widget.sizeHint().width() + 22
+            self._apply_node_size(target_w, target_h, user_resized=False)
+
+    def _resize_handle_rect(self):
+        r = self.rect()
+        s = self._resize_handle_size
+        return QRectF(r.width() - s - 3, r.height() - s - 3, s, s)
 
     def _rebuild_ports(self):
         self._input_ports = {}
@@ -180,6 +814,46 @@ class WorkflowNodeItem(QGraphicsRectItem):
                 event.accept()
                 return
         super().mouseDoubleClickEvent(event)
+
+    def mousePressEvent(self, event):
+        if self._enable_extended_node_ui and event.button() == Qt.LeftButton and self._resize_handle_rect().contains(event.pos()):
+            self._is_resizing = True
+            self._resize_start_scene_pos = event.scenePos()
+            self._resize_start_size = (self.rect().width(), self.rect().height())
+            self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._is_resizing and self._resize_start_scene_pos is not None:
+            delta = event.scenePos() - self._resize_start_scene_pos
+            new_w = self._resize_start_size[0] + delta.x()
+            new_h = self._resize_start_size[1] + delta.y()
+            self._apply_node_size(new_w, new_h, user_resized=True)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._is_resizing:
+            self._is_resizing = False
+            self._resize_start_scene_pos = None
+            self.setFlag(QGraphicsItem.ItemIsMovable, True)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def hoverMoveEvent(self, event):
+        if self._enable_extended_node_ui and self._resize_handle_rect().contains(event.pos()):
+            self.setCursor(Qt.SizeFDiagCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.setCursor(Qt.ArrowCursor)
+        super().hoverLeaveEvent(event)
     
     def _start_edit_title(self):
         """开始编辑节点标题"""
@@ -351,6 +1025,15 @@ class WorkflowNodeItem(QGraphicsRectItem):
             # txt_w = min(90, painter.fontMetrics().horizontalAdvance(name))
             # painter.drawText(pos + QPointF(-(txt_w + 10), 4), name)
 
+        if self._enable_extended_node_ui:
+            handle_rect = self._resize_handle_rect()
+            painter.setPen(QPen(QColor("#8e8e8e"), 1))
+            painter.setBrush(QBrush(QColor("#d9d9d9")))
+            painter.drawRoundedRect(handle_rect, 2, 2)
+            painter.setPen(QPen(QColor("#9f9f9f"), 1))
+            painter.drawLine(handle_rect.right() - 8, handle_rect.bottom() - 2, handle_rect.right() - 2, handle_rect.bottom() - 8)
+            painter.drawLine(handle_rect.right() - 12, handle_rect.bottom() - 2, handle_rect.right() - 2, handle_rect.bottom() - 12)
+
 
 class WorkflowEdgeItem(QGraphicsPathItem):
     def __init__(self, src: WorkflowNodeItem, src_port: str, dst: WorkflowNodeItem, dst_port: str, temporary=False):
@@ -387,8 +1070,9 @@ class WorkflowScene(QGraphicsScene):
     node_selected = Signal(object)
     graph_changed = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, enable_extended_node_ui=False):
         super().__init__(parent)
+        self.enable_extended_node_ui = bool(enable_extended_node_ui)
         self.setBackgroundBrush(QColor("#22252b"))
         self.setItemIndexMethod(QGraphicsScene.NoIndex)
         self.node_items = {}
@@ -405,11 +1089,31 @@ class WorkflowScene(QGraphicsScene):
         self.undo_stack = WorkflowUndoStack()
         self._node_move_start_positions = {}  # 节点移动开始位置
         self._is_moving_nodes = False
+        # 新增：下拉菜单展开状态标志
+        self._combo_box_opened = False
+        self._active_combo_box = None
         # Remove scene rect limitation to enable infinite canvas
 # self.setSceneRect(-2000, -2000, 4000, 4000)
 
     def set_spec_resolver(self, resolver):
         self.spec_resolver = resolver
+
+    def eventFilter(self, obj, event):
+        """
+        事件过滤器，用于检测QComboBox弹出列表的显示和隐藏
+        """
+        from PySide6.QtCore import QEvent
+        # 检测QComboBox弹出列表的显示和隐藏
+        if event.type() == QEvent.Show:
+            class_name = obj.metaObject().className()
+            # QComboBox的弹出列表通常是QListView
+            if "QListView" in class_name or "QComboBox" in class_name:
+                self._combo_box_opened = True
+        elif event.type() == QEvent.Hide:
+            class_name = obj.metaObject().className()
+            if "QListView" in class_name or "QComboBox" in class_name:
+                self._combo_box_opened = False
+        return super().eventFilter(obj, event)
 
     def drawBackground(self, painter, rect):
         super().drawBackground(painter, rect)
@@ -465,7 +1169,12 @@ class WorkflowScene(QGraphicsScene):
             params=params or {},
         )
         spec = self.spec_resolver(node_type) if self.spec_resolver else NodeSpec(node_type=node_type, title=title, category="默认")
-        item = WorkflowNodeItem(model, spec=spec, on_param_changed=self.on_node_param_changed)
+        item = WorkflowNodeItem(
+            model,
+            spec=spec,
+            on_param_changed=self.on_node_param_changed,
+            enable_extended_node_ui=self.enable_extended_node_ui,
+        )
         self.addItem(item)
         self.node_items[node_id] = item
         self.graph_changed.emit()
@@ -1042,15 +1751,29 @@ class WorkflowCanvasView(QGraphicsView):
             event.accept()
             return
         elif event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
-            # Delete/Backspace - 删除选中节点（仅在非编辑状态下）
-            if self.scene().selectedItems():
-                self.scene().delete_selected_with_undo()
-                event.accept()
+            self.scene().delete_selected_with_undo()
+            event.accept()
             return
         
         super().keyPressEvent(event)
 
     def wheelEvent(self, event):
+        # 检查是否有下拉菜单展开
+        active_combo = getattr(self.scene(), '_active_combo_box', None) if self.scene() else None
+        try:
+            if active_combo is not None and active_combo.view().isVisible():
+                scrollbar = active_combo.view().verticalScrollBar()
+                delta = event.angleDelta().y()
+                step = scrollbar.singleStep() * 3
+                scrollbar.setValue(scrollbar.value() - step if delta > 0 else scrollbar.value() + step)
+                event.accept()
+                return
+        except:
+            pass
+        if (self.scene() and getattr(self.scene(), '_combo_box_opened', False)) or QApplication.activePopupWidget() is not None:
+            event.accept()
+            return
+        
         factor = 1.15 if event.angleDelta().y() > 0 else 0.87
         self.scale(factor, factor)
         self._update_overlay(event.position().toPoint(), force_show=True)

@@ -649,19 +649,7 @@ class OscilloscopeCWPanel(QWidget):
         path = self.save_dir + gettimestr() + '_cw.csv'
         if path:
             arr = np.column_stack((self.mw_freq, self.ch1_x, self.ch1_y, self.ch2_x, self.ch2_y))
-            np.savetxt(path, arr, delimiter=",",
-                       header=f"%IIR模式增益系数={self.parent.param_config['lockin_iir_gain']['value']} V\n"
-                              f"%单点CW采集累加次数={self.single_point_num_input.text()}\n"
-                              f"%微波通道选择={self.mw_channel_combo.currentText()}\n"
-                              f"%激光器电流={self.parent.param_config['laser_power']['value']} A\n"
-                              f"%微波CH1功率={self.parent.param_config['mw_ch1_power']['value']} dBm\n"
-                              f"%微波CH2功率={self.parent.param_config['mw_ch2_power']['value']} dBm\n"
-                              f"%微波CH1调制深度={self.parent.param_config['mw_ch1_fm_sens']['value']}\n"
-                              f"%微波CH2调制深度={self.parent.param_config['mw_ch2_fm_sens']['value']}\n"
-                              f"%CH1调制频率={self.parent.param_config['lockin_modu_freq1']['value']} Hz\n"
-                              f"%CH2调制频率={self.parent.param_config['lockin_modu_freq2']['value']} Hz\n"
-                              f"%MW Freq (Hz), CH1-X(Hz), CH1-Y(Hz), CH2-X(Hz), CH2-Y(Hz)\n",
-                       comments='% ')
+            np.savetxt(path, arr, delimiter=",")
             self.parent.save_exp_config(self.save_dir)
             self.save_image()
             QMessageBox.information(self, "保存成功", f"IIR模式数据已保存为 {path}")

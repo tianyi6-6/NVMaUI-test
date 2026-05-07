@@ -1284,20 +1284,7 @@ class OscilloscopeIIRDCPanel(QWidget):
             arr = np.column_stack(
                 (self.full_mac_time, self.full_time_data, self.full_data1, self.full_data2, self.full_data3, self.full_data4, self.full_data5, self.full_data6,
                  self.full_data7, self.full_data8, self.full_data9, self.full_data10))
-            np.savetxt(path, arr, delimiter=",",
-                       header=f"%采样率={self.parent.param_config['lockin_sample_rate']['value']}Hz\n"
-                              f"%CH1磁场-电压转换系数（未更新，手动指定）={self.parent.param_config['nv_volt_to_tesla_coe_ch1']['value']} T/V\n"
-                              f"%CH2磁场-电压转换系数（未更新，手动指定）={self.parent.param_config['nv_volt_to_tesla_coe_ch2']['value']} T/V\n"
-                              f"%等效旋磁比={self.parent.param_config['nv_eff_gyromagnetic_ratio']['value']} Hz/T\n"
-                              f"%CH1一阶微分谱斜率={self.parent.param_config['nv_cw_slope_ch1']['value']} V/Hz\n"
-                              f"%CH2一阶微分谱斜率={self.parent.param_config['nv_cw_slope_ch2']['value']} V/Hz\n"
-                              f"%CH1当前微波设置频率={self.parent.param_config['mw_ch1_freq']['value']:.1f}Hz\n"
-                              f"%CH2当前微波设置频率={self.parent.param_config['mw_ch2_freq']['value']:.1f}Hz\n"
-                              f"%微波工作模式：{self.mw_mode_combo.currentText()}\n"
-                              f"%设置定时采集启动时间={self.get_start_time()}\n"
-                              f"%IIR模式增益系数={self.parent.param_config['lockin_iir_gain']['value']} V\n"
-                              f"%机器时间戳(s), 计算时间戳(s), 荧光-CH1-X-Freq1(V), 激光-CH2-X-Freq1(V), 荧光-CH1-Y-Freq1(V), 激光-CH2-Y-Freq1(V), 荧光-CH1-X-Freq2(V), 激光-CH2-X-Freq2(V), 荧光-CH1-Y-Freq2(V), 激光-CH2-Y-Freq2(V),荧光直流-CH1-DC (V), 激光直流-CH2-DC (V)",
-                       comments='% ')
+            np.savetxt(path, arr, delimiter=",")
             self.flush_buffer()
             if ui_mode:
                 QMessageBox.information(self, "保存成功", f"IIR模式数据已保存为 {path}")
