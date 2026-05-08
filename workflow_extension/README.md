@@ -301,6 +301,19 @@ canvas/
 4. **可读性**：每个文件专注于特定功能，代码更易理解
 5. **测试友好**：模块化设计便于单元测试
 
+**代码文档**：
+- `canvas/` 目录下的所有核心文件已添加详细的中文注释
+- 注释包括模块级文档字符串、类文档字符串和方法文档字符串
+- 注释说明了类/方法的功能、参数、返回值和使用场景
+- 已添加注释的文件：
+  - `canvas/scene.py` - 工作流画布场景
+  - `canvas/view.py` - 工作流画布视图
+  - `canvas/items/edge_item.py` - 连线项
+  - `canvas/items/node_item.py` - 节点项
+  - `canvas/widgets/high_precision_spinbox.py` - 高精度数值输入控件
+  - `canvas/widgets/title_edit_filter.py` - 标题编辑事件过滤器
+  - `canvas/widgets/wheel_combo_box.py` - 滚轮下拉框
+
 #### 5. 撤销重做系统 (`undo_system.py`)
 实现命令模式的撤销重做功能：
 - `WorkflowCommand`：命令基类

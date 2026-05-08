@@ -2081,3 +2081,90 @@
 2025-12-06 10:01:07,604 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
 2025-12-06 10:01:07,604 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
 2025-12-06 10:01:07,605 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-07 14:40:17,182 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-07 14:40:17,183 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-07 14:40:17,184 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-07 14:40:37,345 - [INFO] - root - [Workflow] 已添加节点: 选择设备
+2026-05-07 14:40:39,578 - [INFO] - root - [Workflow] 已添加节点: 超声电机状态
+2026-05-07 14:40:41,754 - [INFO] - root - [Workflow] 已添加节点: 初始化设备节点
+2026-05-07 15:23:31,149 - [INFO] - root - [Workflow] 已连接节点: 选择设备.device_config -> 初始化设备节点.device_config
+2026-05-07 15:23:37,573 - [INFO] - root - [Workflow] 已删除节点: 超声电机状态
+2026-05-07 15:36:32,630 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-07 15:36:32,631 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-07 15:36:32,632 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-07 15:36:38,672 - [INFO] - root - [Workflow] 已添加节点: 选择设备
+2026-05-07 15:36:40,654 - [INFO] - root - [Workflow] 已添加节点: 初始化设备节点
+2026-05-07 15:39:24,822 - [INFO] - root - [Workflow] 已添加节点: CW谱采集
+2026-05-07 15:39:28,124 - [INFO] - root - [Workflow] 已连接节点: 选择设备.device_config -> 初始化设备节点.device_config
+2026-05-07 15:39:32,373 - [INFO] - root - [Workflow] 已连接节点: 初始化设备节点.device_out -> CW谱采集.device_in
+2026-05-07 15:39:39,127 - [INFO] - root - [Workflow] 已添加节点: 数据显示
+2026-05-07 15:39:42,151 - [INFO] - root - [Workflow] 已连接节点: CW谱采集.data -> 数据显示.data_in
+2026-05-07 15:40:01,664 - [INFO] - root - [Workflow] 开始执行工作流。
+2026-05-07 15:40:01,670 - [INFO] - root - [Workflow] [RUN] node_758a80d6
+2026-05-07 15:40:01,680 - [INFO] - root - [Workflow] 开始执行节点: 选择设备 (类型: device.select)
+2026-05-07 15:40:01,680 - [INFO] - root - 设备选择: 设备名称=样机1 (WR04-02), 实验配置=config/exp_config_dev1.ini, 系统配置=config/system_config_dev1.ini, 锁相端口=interface/Lockin/usblib/module_64/libusb-1.0.dll, 超声电机端口=COM12, 日志路径=log/experiment_log_dev1.txt
+2026-05-07 15:40:01,681 - [INFO] - root - [Workflow] 节点 选择设备 输出: {'device_name': '样机1 (WR04-02)', 'exp_config_path': 'config/exp_config_dev1.ini', 'sys_config_path':
+2026-05-07 15:40:01,682 - [INFO] - root - [Workflow] [OK] node_758a80d6 -> {'device_name': '样机1 (WR04-02)', 'exp_config_path': 'config/exp_config_dev1.ini', 'sys_config_path': 'config/system_config_dev1.ini', 'lockin_port': 'interface/Lockin/usblib/module_64/libusb-1.0.dll', 'ultramotor_port': 'COM12', 'log_path': 'log/experiment_log_dev1.txt'}
+2026-05-07 15:40:01,696 - [INFO] - root - [Workflow] [RUN] node_be3c9688
+2026-05-07 15:40:01,709 - [INFO] - root - [Workflow] 数据传递: 选择设备 -> 初始化设备节点.device_config (数据: {'device_name': '样机1 (WR04-02)', 'exp_config_path'...)
+2026-05-07 15:40:01,709 - [INFO] - root - [Workflow] 开始执行节点: 初始化设备节点 (类型: device.connect)
+2026-05-07 15:40:01,710 - [INFO] - root - 工作流初始化设备节点：当前不是实际采集设备，尝试自动连接设备。
+2026-05-07 15:40:01,710 - [DEBUG] - root - 尝试连接设备。
+2026-05-07 15:40:01,749 - [DEBUG] - root - 设备连接失败。[Could not find module '192.168.3.100:5005' (or one of its dependencies). Try using the full path with constructor syntax.]
+2026-05-07 15:40:01,750 - [INFO] - root - [Workflow] 节点 初始化设备节点 输出: {'connected': False, 'message': '未连接实际采集设备，请先连接设备', 'device_config': {}, 'components': {'lockin': Fa
+2026-05-07 15:40:01,750 - [INFO] - root - [Workflow] [OK] node_be3c9688 -> {'connected': False, 'message': '未连接实际采集设备，请先连接设备', 'device_config': {}, 'components': {'lockin': False, 'laser': False, 'microwave': False, 'memory': False}}
+2026-05-07 15:40:01,763 - [INFO] - root - [Workflow] [RUN] node_db68dfea
+2026-05-07 15:40:01,775 - [INFO] - root - [Workflow] 数据传递: 初始化设备节点 -> CW谱采集.device_in (数据: {'connected': False, 'message': '未连接实际采集设备，请先连接设备'...)
+2026-05-07 15:40:01,776 - [INFO] - root - [Workflow] 开始执行节点: CW谱采集 (类型: cw.spectrum_acquire)
+2026-05-07 15:40:01,776 - [ERROR] - root - CW谱采集失败: 设备未连接，请先在设备管理页连接设备
+2026-05-07 15:40:01,777 - [INFO] - root - [Workflow] 节点 CW谱采集 输出: {'error': '设备未连接，请先在设备管理页连接设备'}
+2026-05-07 15:40:01,778 - [INFO] - root - [Workflow] [OK] node_db68dfea -> {'error': '设备未连接，请先在设备管理页连接设备'}
+2026-05-07 15:40:01,791 - [INFO] - root - [Workflow] [RUN] node_7ea29d74
+2026-05-07 15:40:01,802 - [INFO] - root - [Workflow] 数据传递: CW谱采集 -> 数据显示.data_in (数据: {'error': '设备未连接，请先在设备管理页连接设备'})
+2026-05-07 15:40:01,803 - [INFO] - root - [Workflow] 开始执行节点: 数据显示 (类型: data.display)
+2026-05-07 15:40:01,803 - [WARNING] - root - 数据显示节点未收到有效数据: 设备未连接，请先在设备管理页连接设备
+2026-05-07 15:40:01,804 - [INFO] - root - [Workflow] 节点 数据显示 输出: {'error': '上游数据无效: 设备未连接，请先在设备管理页连接设备'}
+2026-05-07 15:40:01,804 - [INFO] - root - [Workflow] [OK] node_7ea29d74 -> {'error': '上游数据无效: 设备未连接，请先在设备管理页连接设备'}
+2026-05-07 15:40:01,818 - [INFO] - root - [Workflow] 工作流执行结束。
+2026-05-07 15:48:25,580 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-07 15:48:25,581 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-07 15:48:25,582 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-07 15:48:30,934 - [INFO] - root - [Workflow] 已添加节点: 选择设备
+2026-05-07 15:48:33,477 - [INFO] - root - [Workflow] 已添加节点: 初始化设备节点
+2026-05-07 15:48:37,329 - [INFO] - root - [Workflow] 已连接节点: 选择设备.device_config -> 初始化设备节点.device_config
+2026-05-07 15:48:38,731 - [INFO] - root - [Workflow] 已添加节点: CW谱采集
+2026-05-07 15:48:42,380 - [INFO] - root - [Workflow] 已连接节点: 初始化设备节点.device_out -> CW谱采集.device_in
+2026-05-07 15:48:43,913 - [INFO] - root - [Workflow] 已添加节点: 数据显示
+2026-05-07 15:48:47,591 - [INFO] - root - [Workflow] 已连接节点: CW谱采集.data -> 数据显示.data_in
+2026-05-07 15:49:04,132 - [INFO] - root - [Workflow] 开始执行工作流。
+2026-05-07 15:49:04,136 - [INFO] - root - [Workflow] [RUN] node_96522680
+2026-05-07 15:49:04,138 - [INFO] - root - [Workflow] 开始执行节点: 选择设备 (类型: device.select)
+2026-05-07 15:49:04,138 - [INFO] - root - 设备选择: 设备名称=样机1 (WR04-02), 实验配置=config/exp_config_dev1.ini, 系统配置=config/system_config_dev1.ini, 锁相端口=interface/Lockin/usblib/module_64/libusb-1.0.dll, 超声电机端口=COM12, 日志路径=log/experiment_log_dev1.txt
+2026-05-07 15:49:04,138 - [INFO] - root - [Workflow] 节点 选择设备 输出: {'device_name': '样机1 (WR04-02)', 'exp_config_path': 'config/exp_config_dev1.ini', 'sys_config_path':
+2026-05-07 15:49:04,139 - [INFO] - root - [Workflow] [OK] node_96522680 -> {'device_name': '样机1 (WR04-02)', 'exp_config_path': 'config/exp_config_dev1.ini', 'sys_config_path': 'config/system_config_dev1.ini', 'lockin_port': 'interface/Lockin/usblib/module_64/libusb-1.0.dll', 'ultramotor_port': 'COM12', 'log_path': 'log/experiment_log_dev1.txt'}
+2026-05-07 15:49:04,142 - [INFO] - root - [Workflow] [RUN] node_17b8ac55
+2026-05-07 15:49:04,151 - [INFO] - root - [Workflow] 数据传递: 选择设备 -> 初始化设备节点.device_config (数据: {'device_name': '样机1 (WR04-02)', 'exp_config_path'...)
+2026-05-07 15:49:04,151 - [INFO] - root - [Workflow] 开始执行节点: 初始化设备节点 (类型: device.connect)
+2026-05-07 15:49:04,152 - [INFO] - root - 工作流初始化设备节点：当前不是实际采集设备，尝试自动连接设备。
+2026-05-07 15:49:04,152 - [DEBUG] - root - 尝试连接设备。
+2026-05-07 15:49:04,186 - [DEBUG] - root - 设备连接失败。[Could not find module '192.168.3.100:5005' (or one of its dependencies). Try using the full path with constructor syntax.]
+2026-05-07 15:49:04,187 - [INFO] - root - [Workflow] 节点 初始化设备节点 输出: {'connected': False, 'message': '未连接实际采集设备，请先连接设备', 'device_config': {}, 'components': {'lockin': Fa
+2026-05-07 15:49:04,187 - [INFO] - root - [Workflow] [OK] node_17b8ac55 -> {'connected': False, 'message': '未连接实际采集设备，请先连接设备', 'device_config': {}, 'components': {'lockin': False, 'laser': False, 'microwave': False, 'memory': False}}
+2026-05-07 15:49:04,197 - [INFO] - root - [Workflow] [RUN] node_b61e36c7
+2026-05-07 15:49:04,206 - [INFO] - root - [Workflow] 数据传递: 初始化设备节点 -> CW谱采集.device_in (数据: {'connected': False, 'message': '未连接实际采集设备，请先连接设备'...)
+2026-05-07 15:49:04,206 - [INFO] - root - [Workflow] 开始执行节点: CW谱采集 (类型: cw.spectrum_acquire)
+2026-05-07 15:49:04,206 - [ERROR] - root - CW谱采集失败: 设备未连接，请先在设备管理页连接设备
+2026-05-07 15:49:04,207 - [INFO] - root - [Workflow] 节点 CW谱采集 输出: {'error': '设备未连接，请先在设备管理页连接设备'}
+2026-05-07 15:49:04,207 - [INFO] - root - [Workflow] [OK] node_b61e36c7 -> {'error': '设备未连接，请先在设备管理页连接设备'}
+2026-05-07 15:49:04,219 - [INFO] - root - [Workflow] [RUN] node_a733bce9
+2026-05-07 15:49:04,227 - [INFO] - root - [Workflow] 数据传递: CW谱采集 -> 数据显示.data_in (数据: {'error': '设备未连接，请先在设备管理页连接设备'})
+2026-05-07 15:49:04,227 - [INFO] - root - [Workflow] 开始执行节点: 数据显示 (类型: data.display)
+2026-05-07 15:49:04,228 - [WARNING] - root - 数据显示节点未收到有效数据: 设备未连接，请先在设备管理页连接设备
+2026-05-07 15:49:04,228 - [INFO] - root - [Workflow] 节点 数据显示 输出: {'error': '上游数据无效: 设备未连接，请先在设备管理页连接设备'}
+2026-05-07 15:49:04,229 - [INFO] - root - [Workflow] [OK] node_a733bce9 -> {'error': '上游数据无效: 设备未连接，请先在设备管理页连接设备'}
+2026-05-07 15:49:04,237 - [INFO] - root - [Workflow] 工作流执行结束。
+2026-05-08 09:15:19,206 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-08 09:15:19,207 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-08 09:15:19,208 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-08 09:16:38,855 - [INFO] - root - [Workflow] 已添加节点: 选择设备
+2026-05-08 09:16:41,076 - [INFO] - root - [Workflow] 已添加节点: 初始化设备节点

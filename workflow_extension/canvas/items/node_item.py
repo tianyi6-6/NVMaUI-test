@@ -1,3 +1,8 @@
+"""工作流节点项
+
+提供工作流画布中节点的可视化表示，支持参数编辑、端口连接、大小调整等功能。
+"""
+
 import os
 import re
 from decimal import Decimal, InvalidOperation
@@ -33,39 +38,75 @@ from workflow_extension.canvas.widgets.wheel_combo_box import WheelComboBox
 
 
 class WorkflowNodeItem(QGraphicsRectItem):
+    """工作流节点项
+    
+    在画布上表示一个工作流节点，包含以下功能：
+    - 显示节点标题和参数
+    - 输入/输出端口
+    - 参数编辑（支持多种类型：文本、整数、浮点数、布尔、下拉选择）
+    - 设备参数的特殊展示（当前值/范围/设置值）
+    - 节点大小调整（扩展模式）
+    - 标题编辑（扩展模式）
+    - 参数分组显示（扩展模式）
+    
+    Attributes:
+        model (WorkflowNodeModel): 节点数据模型
+        spec (NodeSpec): 节点规范
+        _enable_extended_node_ui (bool): 是否启用扩展UI功能
+    """
     def __init__(self, model: WorkflowNodeModel, spec: NodeSpec, on_param_changed=None, enable_extended_node_ui=False):
+        """初始化节点项
+        
+        Args:
+            model: 节点数据模型
+            spec: 节点规范
+            on_param_changed: 参数变化回调函数
+            enable_extended_node_ui: 是否启用扩展UI功能（调整大小、编辑标题等）
+        """
         super().__init__(0, 0, 280, 180)
         self.model = model
         self.spec = spec
         self._on_param_changed = on_param_changed
         self._enable_extended_node_ui = bool(enable_extended_node_ui)
+        # 设置节点位置
         self.setPos(QPointF(model.position[0], model.position[1]))
+        # 设置节点可移动、可选中
         self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        # 设置边框样式
         self.setPen(QPen(QColor("#9a9a9a"), 1.2))
-        self._header_h = 34
-        self._port_radius = 5
-        self._port_hit_padding = 8
+        # 布局相关参数
+        self._header_h = 34  # 标题栏高度
+        self._port_radius = 5  # 端点半径
+        self._port_hit_padding = 8  # 端口点击区域内边距
+        # 端口位置字典
         self._input_ports = {}
         self._output_ports = {}
+        # 参数控件代理
         self._proxy = None
-        self._param_editors = {}  # 存储参数编辑器的引用
+        # 参数编辑器字典：key -> widget
+        self._param_editors = {}
+        # 节点大小限制
         self._min_node_width = 260
         self._min_node_height = 130
         self._max_node_width = 920
         self._max_node_height = 2000
+        # 调整大小相关
         self._resize_handle_size = 14
         self._is_resizing = False
         self._resize_start_scene_pos = None
         self._resize_start_size = (280, 180)
         self._user_resized = bool(self.model.params.get("__node_user_resized__", False)) and self._enable_extended_node_ui
-        # 新增：标题编辑相关
+        # 标题编辑相关
         self._title_edit_proxy = None
         self._title_edit_widget = None
         self._is_editing_title = False
         self._edit_event_filter = None  # 事件过滤器
+        # 启用悬停事件（用于调整大小光标）
         self.setAcceptHoverEvents(self._enable_extended_node_ui)
+        # 构建参数控件
         self._build_param_widget()
+        # 恢复保存的节点大小
         if self._enable_extended_node_ui:
             saved_size = self.model.params.get("__node_size__")
             if isinstance(saved_size, (list, tuple)) and len(saved_size) == 2:
@@ -74,9 +115,15 @@ class WorkflowNodeItem(QGraphicsRectItem):
                     self._user_resized = True
                 except (TypeError, ValueError):
                     pass
+        # 重建端口位置
         self._rebuild_ports()
 
     def _build_param_widget(self):
+        """构建参数控件
+        
+        根据节点规范创建参数编辑控件。
+        扩展模式下支持参数分组显示，非扩展模式下只显示前4个参数。
+        """
         if self._proxy is not None:
             scene = self.scene()
             if scene is not None:
@@ -198,7 +245,20 @@ class WorkflowNodeItem(QGraphicsRectItem):
             self.setRect(0, 0, 280, target_h)
     
     def _add_param_to_form(self, form, p, current):
-        """将参数添加到表单布局"""
+        """将参数添加到表单布局
+        
+        根据参数类型创建相应的编辑控件：
+        - device_param: 设备参数，显示当前值/范围/设置值
+        - bool: 复选框
+        - select: 下拉选择框
+        - int/float: 高精度数值输入框
+        - text: 文本输入框
+        
+        Args:
+            form: 表单布局
+            p: 参数规范
+            current: 当前参数值
+        """
         if p.device_param:
             # 设备参数：统一展示“当前值 / 范围 / 设置值”
             param_widget = QWidget()
@@ -509,6 +569,12 @@ class WorkflowNodeItem(QGraphicsRectItem):
             self._on_param_changed(self.model)
 
     def _set_param_value(self, key, value):
+        """设置参数值并处理参数依赖
+        
+        Args:
+            key: 参数键
+            value: 参数值
+        """
         self.model.params[key] = value
 
         # 处理参数依赖
@@ -626,6 +692,11 @@ class WorkflowNodeItem(QGraphicsRectItem):
         return QRectF(r.width() - s - 3, r.height() - s - 3, s, s)
 
     def _rebuild_ports(self):
+        """重建端口位置
+        
+        根据当前节点大小和端口规范重新计算所有端口的位置。
+        输入端口在左侧，输出端口在右侧。
+        """
         self._input_ports = {}
         self._output_ports = {}
         left_base = self._header_h + 16
@@ -636,6 +707,15 @@ class WorkflowNodeItem(QGraphicsRectItem):
             self._output_ports[p.name] = QPointF(self.rect().width() - 6, right_base + i * 22)
 
     def anchor(self, port_name, is_output):
+        """获取指定端口的场景坐标
+        
+        Args:
+            port_name: 端口名称
+            is_output: 是否为输出端口
+        
+        Returns:
+            QPointF: 端口在场景中的坐标
+        """
         port_map = self._output_ports if is_output else self._input_ports
         pos = port_map.get(port_name)
         if pos is None:
@@ -647,6 +727,15 @@ class WorkflowNodeItem(QGraphicsRectItem):
         return self.mapToScene(pos)
 
     def port_at_scene_pos(self, scene_pos, require_output=None):
+        """查找指定场景位置的端口
+        
+        Args:
+            scene_pos: 场景坐标位置
+            require_output: 是否要求输出端口（None表示任意）
+        
+        Returns:
+            (is_output, port_name) 或 None
+        """
         local = self.mapFromScene(scene_pos)
         check = []
         if require_output is None or require_output is False:
@@ -832,6 +921,16 @@ class WorkflowNodeItem(QGraphicsRectItem):
         return super().itemChange(change, value)
 
     def paint(self, painter, option, widget=None):
+        """绘制节点
+        
+        绘制节点的背景、标题栏和选中状态。
+        选中时绘制蓝色高亮边框。
+        
+        Args:
+            painter: 绘图器
+            option: 绘图选项
+            widget: 父控件
+        """
         painter.setRenderHint(QPainter.Antialiasing)
         body_rect = self.rect()
         header_rect = body_rect.adjusted(0, 0, 0, -(body_rect.height() - self._header_h))

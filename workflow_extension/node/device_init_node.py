@@ -55,6 +55,11 @@ def _exec_device_connect(context, node, inputs):
             "components": {"lockin": False, "laser": False, "microwave": False, "memory": False},
         }
 
+    # 从上游节点获取设备配置（如果有）
+    upstream_config = inputs.get("device_config", {})
+    if upstream_config:
+        logging.info("工作流初始化设备节点：接收到上游设备配置: %s", upstream_config.get("device_name", "未知设备"))
+
     try:
         if hasattr(app, "param_inputs") and hasattr(app, "set_param"):
             logging.info("工作流初始化设备节点：开始下发所有设备配置。")
@@ -75,7 +80,8 @@ def _exec_device_connect(context, node, inputs):
             "components": {"lockin": False, "laser": False, "microwave": False, "memory": False},
         }
 
-    params = node.params
+    # 合并参数：上游配置优先，然后是当前节点参数
+    params = {**node.params, **upstream_config}
     device_config = {
         "lockin": {
             "lia_time_constant": params.get("LIA时间常数", "100ms"),
