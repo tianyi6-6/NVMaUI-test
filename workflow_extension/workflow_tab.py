@@ -1,9 +1,8 @@
 import json
-import logging
 
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QEvent, QObject
-from PySide6.QtGui import QTextDocument
+from PySide6.QtGui import QTextDocument, QShortcut, QKeySequence
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -28,9 +27,12 @@ from PySide6.QtWidgets import (
 from workflow_extension.builtins import register_builtin_nodes
 from workflow_extension.canvas import WorkflowCanvasView, WorkflowNodeItem, WorkflowScene
 from workflow_extension.engine import WorkflowExecutor
+from workflow_extension.logger import get_logger
 from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
 from workflow_extension.node_registry import NodeRegistry
 from workflow_extension.serializer import export_json, load_json
+
+_log = get_logger("Tab")
 
 
 class TabBarEventFilter(QObject):
@@ -295,7 +297,7 @@ class WorkflowTab(QWidget):
         self.workflow_tabs.removeTab(index)
         page.deleteLater()
         self._renumber_workflow_tabs()
-        self._log(f"已关闭工作流页签，剩余页签已重新编号。")
+        self._log_msg(f"已关闭工作流页签，剩余页签已重新编号。")
 
     def _on_tab_bar_double_clicked(self, event):
         """双击标签页标题时触发重命名"""
@@ -311,7 +313,7 @@ class WorkflowTab(QWidget):
             page = self.workflow_tabs.widget(index)
             page.workflow_title = new_title
             self.workflow_tabs.setTabText(index, new_title)
-            self._log(f"已重命名标签: {current_title} -> {new_title}")
+            self._log_msg(f"已重命名标签: {current_title} -> {new_title}")
 
     def _bind_events(self):
         # 基本事件绑定
@@ -332,6 +334,11 @@ class WorkflowTab(QWidget):
         self.btn_redo.setEnabled(self.scene.undo_stack.can_redo())
         self._update_undo_redo_tooltips()
         
+        # 添加 Ctrl+S 快捷键保存
+        save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
+        save_shortcut.activated.connect(self._on_save)
+        self.btn_save.setToolTip("保存 (Ctrl+S)")
+        
         # 其他事件绑定
         self.palette.itemDoubleClicked.connect(self._on_palette_double_clicked)
         self.palette_search.textChanged.connect(self._on_palette_search)
@@ -347,7 +354,7 @@ class WorkflowTab(QWidget):
         spec = self.registry.get(node_type)
         center_pos = self.canvas.mapToScene(self.canvas.viewport().rect().center())
         self.scene.add_node_with_undo(spec.node_type, spec.title, center_pos, params=dict(spec.default_params))
-        self._log(f"已添加节点: {spec.title}")
+        self._log_msg(f"已添加节点: {spec.title}")
 
     def _filter_palette(self, keyword):
         query = keyword.strip().lower()
@@ -412,7 +419,7 @@ class WorkflowTab(QWidget):
     def _add_node_at(self, node_type, title, scene_pos):
         spec = self.registry.get(node_type)
         self.scene.add_node_with_undo(spec.node_type, title, scene_pos, params=dict(spec.default_params))
-        self._log(f"已添加节点: {title}")
+        self._log_msg(f"已添加节点: {title}")
 
     def _copy_node(self, node_item):
         offset = self.canvas.mapToScene(40, 40) - self.canvas.mapToScene(0, 0)
@@ -423,14 +430,14 @@ class WorkflowTab(QWidget):
             pos,
             params=dict(node_item.model.params),
         )
-        self._log(f"已复制节点: {node_item.model.title}")
+        self._log_msg(f"已复制节点: {node_item.model.title}")
 
     def _start_link_from_node(self, node_item):
         ok = self.scene.begin_link_from_node(node_item)
         if ok:
-            self._log("已进入连线模式：请左键点击目标节点输入端口。")
+            self._log_msg("已进入连线模式：请左键点击目标节点输入端口。")
         else:
-            self._log("该节点没有可用输出端口，无法开始连线。")
+            self._log_msg("该节点没有可用输出端口，无法开始连线。")
 
     @staticmethod
     def _coerce_value(text):
@@ -445,7 +452,7 @@ class WorkflowTab(QWidget):
 
     def _new_workflow(self):
         page = self._create_workflow_page(switch_to=True)
-        self._log(f"已新建空白工作流页签: {page.workflow_title}")
+        self._log_msg(f"已新建空白工作流页签: {page.workflow_title}")
 
 
     def _save_workflow(self):
@@ -454,7 +461,7 @@ class WorkflowTab(QWidget):
             return
         graph = self.scene.build_graph()
         export_json(graph, file_path)
-        self._log(f"工作流已保存: {file_path}")
+        self._log_msg(f"工作流已保存: {file_path}")
 
     def _load_workflow(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "加载工作流", "", "工作流文件 (*.json)")
@@ -463,14 +470,14 @@ class WorkflowTab(QWidget):
         
         graph = load_json(file_path)
         self.scene.load_graph(graph)
-        self._log(f"工作流已加载: {file_path}")
+        self._log_msg(f"工作流已加载: {file_path}")
 
     def _export_json(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "导出 JSON", "", "JSON (*.json)")
         if not file_path:
             return
         export_json(self.scene.build_graph(), file_path)
-        self._log(f"已导出 JSON: {file_path}")
+        self._log_msg(f"已导出 JSON: {file_path}")
 
     def _run_workflow(self):
         graph = self.scene.build_graph()
@@ -480,25 +487,25 @@ class WorkflowTab(QWidget):
         app_context = self.app_context or self.parent()
         if app_context is None:
             QMessageBox.warning(self, "提示", "未找到主程序上下文，无法执行需要设备的工作流。")
-            self._log("未找到主程序上下文，无法执行需要设备的工作流。")
+            self._log_msg("未找到主程序上下文，无法执行需要设备的工作流。")
             return
         self._latest_results = {}
         self._reset_plot_buffers()
         self._running_workflow_page = self._active_workflow_page
-        self._log("开始执行工作流。")
+        self._log_msg("开始执行工作流。")
         context = {"app": app_context, "plot_callback": self._on_plot_payload, "workflow_tab": self}
         self.executor.run(graph, context)
 
     def _stop_workflow(self):
         self.executor.stop()
-        self._log("已请求停止工作流执行。")
+        self._log_msg("已请求停止工作流执行。")
 
     def _on_exec_node_started(self, node_id):
         scene = self._running_workflow_page.scene if self._running_workflow_page is not None else self.scene
         item = scene.node_items.get(node_id)
         if isinstance(item, WorkflowNodeItem):
             item.setBrush(pg.mkBrush("#2f5d9b"))
-        self._log(f"[RUN] {node_id}")
+        self._log_msg(f"[RUN] {node_id}")
 
     def _on_exec_node_finished(self, node_id, result):
         scene = self._running_workflow_page.scene if self._running_workflow_page is not None else self.scene
@@ -507,18 +514,18 @@ class WorkflowTab(QWidget):
             item.setBrush(pg.mkBrush("#2a7d46"))
         self._latest_results[node_id] = result
         self._sync_plot_from_result(result)
-        self._log(f"[OK] {node_id} -> {result}")
+        self._log_msg(f"[OK] {node_id} -> {result}")
 
     def _on_exec_node_failed(self, node_id, err):
         scene = self._running_workflow_page.scene if self._running_workflow_page is not None else self.scene
         item = scene.node_items.get(node_id)
         if isinstance(item, WorkflowNodeItem):
             item.setBrush(pg.mkBrush("#8d2d2d"))
-        self._log(f"[ERR] {node_id} -> {err}")
+        self._log_msg(f"[ERR] {node_id} -> {err}")
 
     def _on_exec_finished(self):
         self._running_workflow_page = None
-        self._log("工作流执行结束。")
+        self._log_msg("工作流执行结束。")
 
     def _on_plot_payload(self, payload):
         x = payload.get("x")
@@ -620,26 +627,26 @@ class WorkflowTab(QWidget):
         self.plot_curve_bottom_main.setData(self._plot_x, self._plot_lower_main)
         self.plot_curve_bottom_aux.setData(self._plot_x, self._plot_lower_aux)
 
-    def _log(self, text):
-        logging.info(f"[Workflow] {text}")
+    def _log_msg(self, text):
+        _log.info(text)
 
     def _on_undo(self):
         """撤销操作"""
         if self.scene.undo_stack.can_undo():
             success = self.scene.undo_stack.undo(self.scene)
             if success:
-                self._log(f"已撤销: {self.scene.undo_stack.get_undo_description()}")
+                self._log_msg(f"已撤销: {self.scene.undo_stack.get_undo_description()}")
             else:
-                self._log("撤销操作失败")
+                self._log_msg("撤销操作失败")
 
     def _on_redo(self):
         """重做操作"""
         if self.scene.undo_stack.can_redo():
             success = self.scene.undo_stack.redo(self.scene)
             if success:
-                self._log(f"已重做: {self.scene.undo_stack.get_redo_description()}")
+                self._log_msg(f"已重做: {self.scene.undo_stack.get_redo_description()}")
             else:
-                self._log("重做操作失败")
+                self._log_msg("重做操作失败")
 
     def _update_undo_redo_tooltips(self):
         """更新撤销/重做按钮的工具提示"""
@@ -676,7 +683,7 @@ class WorkflowTab(QWidget):
     def _on_clear(self):
         self.scene.clear_all()
         self._reset_plot_buffers()
-        self._log("已清空工作流画布")
+        self._log_msg("已清空工作流画布")
 
     def _on_export_json(self):
         self._export_json()
