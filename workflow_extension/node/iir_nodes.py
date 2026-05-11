@@ -8,8 +8,10 @@ IIR谱数据采集专用节点
 # encoding=utf-8
 import time
 import numpy as np
-import logging
 from workflow_extension.node_registry import NodeSpec, NodePortSpec, NodeParamSpec
+from workflow_extension.logger import get_logger
+
+_log = get_logger("IIR")
 
 
 def _exec_iir_acquire(context, node, inputs):
@@ -133,8 +135,9 @@ def _exec_iir_acquire(context, node, inputs):
         finally:
             app.dev.stop_infinite_iir_acq()
 
-        logging.info(
-            f"IIR谱采集: 采集时长={acq_time}s, 采样率={sample_rate}Hz, 点数={len(time_data)}"
+        _log.info(
+            "IIR谱采集完成: 采集时长=%ss, 采样率=%sHz, 点数=%s",
+            acq_time, sample_rate, len(time_data)
         )
 
         return {
@@ -146,7 +149,7 @@ def _exec_iir_acquire(context, node, inputs):
             "point_count": len(time_data),
         }
     except Exception as e:
-        logging.error(f"IIR谱采集失败: {e}")
+        _log.error("IIR谱采集失败: %s", e)
         return {"error": str(e)}
 
 

@@ -6,9 +6,11 @@
 """
 
 # encoding=utf-8
-import logging
 import numpy as np
 from workflow_extension.node_registry import NodeSpec, NodePortSpec, NodeParamSpec
+from workflow_extension.logger import get_logger
+
+_log = get_logger("DataViz")
 
 
 def _exec_data_display(context, node, inputs):
@@ -20,7 +22,7 @@ def _exec_data_display(context, node, inputs):
         # 获取输入数据（引擎传入的是端口名到数据的映射字典）
         data = inputs.get("data_in", {})
         if not data or isinstance(data, dict) and "error" in data:
-            logging.warning(f"数据显示节点未收到有效数据: {data.get('error', '无数据') if isinstance(data, dict) else '无数据'}")
+            _log.warning("数据显示节点未收到有效数据: %s", data.get('error', '无数据') if isinstance(data, dict) else '无数据')
             return {"error": f"上游数据无效: {data.get('error', '无数据') if isinstance(data, dict) else '无数据'}"}
 
         # 判断数据类型并选择显示模式
@@ -43,7 +45,7 @@ def _exec_data_display(context, node, inputs):
             workflow_tab._apply_plot_mode("cw")
             workflow_tab.tab_widget.setCurrentIndex(1)  # 切换到CW谱标签页
 
-            logging.info(f"CW谱数据显示: 频率点数={len(mw_freq)}")
+            _log.info("CW谱数据显示: 频率点数=%s", len(mw_freq))
 
         elif data_type == "all_optical":
             # 全光谱数据
@@ -60,7 +62,7 @@ def _exec_data_display(context, node, inputs):
             workflow_tab._apply_plot_mode("all_optical")
             workflow_tab.tab_widget.setCurrentIndex(0)  # 切换到全关谱标签页
 
-            logging.info(f"全光谱数据显示: 角度点数={len(motor_angle)}")
+            _log.info("全光谱数据显示: 角度点数=%s", len(motor_angle))
 
         elif data_type == "iir":
             # IIR谱数据
@@ -77,10 +79,10 @@ def _exec_data_display(context, node, inputs):
             workflow_tab._apply_plot_mode("iir")
             workflow_tab.tab_widget.setCurrentIndex(2)  # 切换到IIR谱标签页
 
-            logging.info(f"IIR谱数据显示: 时间点数={len(time_data)}")
+            _log.info("IIR谱数据显示: 时间点数=%s", len(time_data))
 
         else:
-            logging.warning(f"未知数据类型: {data_type}")
+            _log.warning("未知数据类型: %s", data_type)
             return {"error": f"未知数据类型: {data_type}"}
 
         # 更新图表
@@ -99,7 +101,7 @@ def _exec_data_display(context, node, inputs):
         return {"status": "success", "data_type": data_type}
 
     except Exception as e:
-        logging.error(f"数据显示失败: {e}")
+        _log.error("数据显示失败: %s", e)
         return {"error": str(e)}
 
 

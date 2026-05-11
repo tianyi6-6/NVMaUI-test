@@ -12,9 +12,10 @@
 
 from collections import defaultdict, deque
 from typing import Dict, List
-import logging
 
 from PySide6.QtCore import QCoreApplication, QObject, Signal
+
+from workflow_extension.logger import get_logger, node_start, node_finish, node_fail, node_data_pass
 
 
 class WorkflowExecutor(QObject):
@@ -42,16 +43,10 @@ class WorkflowExecutor(QObject):
     run_finished = Signal()           # 工作流执行完成
 
     def __init__(self, registry, parent=None):
-        """
-        初始化工作流执行器
-        
-        Args:
-            registry (NodeRegistry): 节点注册器实例
-            parent (QObject, optional): 父对象，用于Qt对象树管理
-        """
         super().__init__(parent)
         self.registry = registry
         self._stop_requested = False
+        self._log = get_logger("Engine")
 
     def stop(self):
         """请求停止工作流执行"""
@@ -100,24 +95,20 @@ class WorkflowExecutor(QObject):
                 for edge in graph.edges:
                     if edge.to_node == node.node_id and edge.from_node in outputs:
                         node_inputs[edge.to_port] = outputs[edge.from_node]
-                        # 记录数据传递
                         from_node = nodes_by_id.get(edge.from_node)
                         if from_node:
                             data_value = outputs[edge.from_node]
                             data_str = str(data_value) if data_value is not None else "None"
-                            if len(data_str) > 50:
-                                data_str = data_str[:50] + "..."
-                            logging.info("[Workflow] 数据传递: %s -> %s.%s (数据: %s)", from_node.title, node.title, edge.to_port, data_str)
+                            node_data_pass(self._log, from_node.title, node.title, edge.to_port, data_str)
                 
-                # 记录节点执行开始
-                logging.info("[Workflow] 开始执行节点: %s (类型: %s)", node.title, node.node_type)
+                node_start(self._log, node.title, node.node_type)
                 
-                # 执行节点逻辑
                 result = spec.executor(context, node, node_inputs) if spec.executor else {}
                 
-                # 记录节点输出
                 if result:
-                    logging.info("[Workflow] 节点 %s 输出: %s", node.title, str(result)[:100] if len(str(result)) > 100 else str(result))
+                    node_finish(self._log, node.title, node.node_type, result_summary=str(result))
+                else:
+                    node_finish(self._log, node.title, node.node_type)
                 
                 # 保存输出结果
                 outputs[node.node_id] = result
@@ -127,7 +118,7 @@ class WorkflowExecutor(QObject):
                 QCoreApplication.processEvents()
                 
             except Exception as exc:
-                # 发送节点失败信号
+                node_fail(self._log, node.title, node.node_type, str(exc))
                 self.node_failed.emit(node.node_id, str(exc))
                 break
                 

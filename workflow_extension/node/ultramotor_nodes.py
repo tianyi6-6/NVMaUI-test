@@ -6,8 +6,10 @@
 """
 
 # encoding=utf-8
-import logging
 from workflow_extension.node_registry import NodeSpec, NodePortSpec, NodeParamSpec
+from workflow_extension.logger import get_logger
+
+_log = get_logger("Ultramotor")
 
 
 def _exec_ultramotor_status(context, node, inputs):
@@ -52,9 +54,11 @@ def _exec_ultramotor_status(context, node, inputs):
         # 更新状态
         app.ultramotor.update_status()
 
-        logging.info(
-            f"超声电机状态: 目标角度={target_angle}°, 转动方向={motor_direction}, "
-            f"当前角度={final_angle}°, 运行状态={'运行中' if is_running else '停止'}"
+        _log.info(
+            "超声电机状态: 目标角度=%s°, 转动方向=%s, "
+            "当前角度=%s°, 运行状态=%s",
+            target_angle, motor_direction,
+            final_angle, '运行中' if is_running else '停止'
         )
 
         return {
@@ -64,7 +68,7 @@ def _exec_ultramotor_status(context, node, inputs):
             "is_running": is_running,
         }
     except Exception as e:
-        logging.error(f"超声电机状态读取失败: {e}")
+        _log.error("超声电机状态读取失败: %s", e)
         return {"error": str(e)}
 
 

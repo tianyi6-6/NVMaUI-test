@@ -4,7 +4,6 @@
 支持撤销/重做系统、节点连接、画布网格绘制等功能。
 """
 
-import logging
 import uuid
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
@@ -13,9 +12,12 @@ from PySide6.QtWidgets import QGraphicsScene
 
 from workflow_extension.canvas.items.edge_item import WorkflowEdgeItem
 from workflow_extension.canvas.items.node_item import WorkflowNodeItem
+from workflow_extension.logger import get_logger
 from workflow_extension.models import WorkflowEdgeModel, WorkflowGraphModel, WorkflowNodeModel
 from workflow_extension.node_registry import NodeSpec
 from workflow_extension.undo_system import WorkflowUndoStack, AddNodeCommand, DeleteNodesCommand, AddEdgeCommand, RemoveEdgeCommand, MoveNodesCommand
+
+_log = get_logger("Scene")
 
 
 class WorkflowScene(QGraphicsScene):
@@ -392,7 +394,7 @@ class WorkflowScene(QGraphicsScene):
         # 隐藏原始线段（但不删除，以便可能恢复）
         edge_item.setVisible(False)
         
-        logging.debug("[WorkflowCanvas] start dragging existing edge from %s", 
+        _log.debug("start dragging existing edge from %s", 
                      "output" if is_dragging_from_src else "input")
 
     def _finish_drag_existing_edge(self, scene_pos):
@@ -434,12 +436,11 @@ class WorkflowScene(QGraphicsScene):
                     # 删除旧连接，创建新连接
                     self._remove_edge_with_undo(edge_item)
                     self._add_edge_with_undo(src_item, src_port, new_item, new_port)
-                    logging.debug("[WorkflowCanvas] edge reconnected: %s.%s -> %s.%s", 
+                    _log.debug("edge reconnected: %s.%s -> %s.%s", 
                                  src_item.model.node_id, src_port, new_item.model.node_id, new_port)
                 else:
-                    # 连接无效，恢复原始线段
                     edge_item.setVisible(True)
-                    logging.debug("[WorkflowCanvas] edge reconnect cancelled, restored original")
+                    _log.debug("edge reconnect cancelled, restored original")
             else:
                 # 从输入端拖拽到新输出端
                 if (new_item is not dst_item and 
@@ -447,16 +448,14 @@ class WorkflowScene(QGraphicsScene):
                     # 删除旧连接，创建新连接
                     self._remove_edge_with_undo(edge_item)
                     self._add_edge_with_undo(new_item, new_port, dst_item, dst_port)
-                    logging.debug("[WorkflowCanvas] edge reconnected: %s.%s -> %s.%s", 
+                    _log.debug("edge reconnected: %s.%s -> %s.%s", 
                                  new_item.model.node_id, new_port, dst_item.model.node_id, dst_port)
                 else:
-                    # 连接无效，恢复原始线段
                     edge_item.setVisible(True)
-                    logging.debug("[WorkflowCanvas] edge reconnect cancelled, restored original")
+                    _log.debug("edge reconnect cancelled, restored original")
         else:
-            # 没有连接到新端口，删除线段
             self._remove_edge_with_undo(edge_item)
-            logging.debug("[WorkflowCanvas] edge deleted after drag with no connection")
+            _log.debug("edge deleted after drag with no connection")
             
         # 清理状态
         self._dragging_existing_edge = False
@@ -476,7 +475,7 @@ class WorkflowScene(QGraphicsScene):
                 src_item = self.node_items.get(from_id)
                 dst_item = self.node_items.get(to_id)
                 if src_item and dst_item:
-                    logging.info("[Workflow] 已断开连接: %s.%s -> %s.%s", 
+                    _log.info("已断开连接: %s.%s -> %s.%s", 
                                 src_item.model.title, from_port, dst_item.model.title, to_port)
                 break
     
@@ -563,8 +562,8 @@ class WorkflowScene(QGraphicsScene):
         if not hit:
             return False
         src_item, src_port = hit
-        logging.debug(
-            "[WorkflowCanvas] begin drag: %s.%s", src_item.model.node_id, src_port
+        _log.debug(
+            "begin drag: %s.%s", src_item.model.node_id, src_port
         )
         self._drag_from = (src_item, src_port)
         self._drag_edge = WorkflowEdgeItem(src_item, src_port, src_item, src_port, temporary=True)
@@ -598,15 +597,15 @@ class WorkflowScene(QGraphicsScene):
         self._drag_from = None
         target = self._find_port_hit(scene_pos, require_output=False)
         if not target:
-            logging.debug("[WorkflowCanvas] finish drag cancelled: no input port hit")
+            _log.debug("finish drag cancelled: no input port hit")
             return False
         dst_item, dst_port = target
         if src_item is dst_item:
-            logging.debug("[WorkflowCanvas] finish drag cancelled: same node")
+            _log.debug("finish drag cancelled: same node")
             return False
         if not self._is_port_compatible(src_item, src_port, dst_item, dst_port):
-            logging.debug(
-                "[WorkflowCanvas] finish drag cancelled: incompatible %s.%s -> %s.%s",
+            _log.debug(
+                "finish drag cancelled: incompatible %s.%s -> %s.%s",
                 src_item.model.node_id,
                 src_port,
                 dst_item.model.node_id,
@@ -614,8 +613,8 @@ class WorkflowScene(QGraphicsScene):
             )
             return False
         self._add_edge(src_item, src_port, dst_item, dst_port)
-        logging.info(
-            "[Workflow] 已连接节点: %s.%s -> %s.%s",
+        _log.info(
+            "已连接节点: %s.%s -> %s.%s",
             src_item.model.title,
             src_port,
             dst_item.model.title,
@@ -672,7 +671,7 @@ class WorkflowScene(QGraphicsScene):
         """
         command = AddEdgeCommand(src_item.model.node_id, src_port, dst_item.model.node_id, dst_port)
         self.undo_stack.push_command(command, self)
-        logging.info("[Workflow] 已连接节点: %s.%s -> %s.%s", 
+        _log.info("已连接节点: %s.%s -> %s.%s", 
                     src_item.model.title, src_port, dst_item.model.title, dst_port)
     
     def _add_edge(self, src_item, src_port, dst_item, dst_port):
@@ -715,7 +714,7 @@ class WorkflowScene(QGraphicsScene):
             node_titles = [item.model.title for item in selected_items]
             command = DeleteNodesCommand(node_ids)
             self.undo_stack.push_command(command, self)
-            logging.info("[Workflow] 已删除节点: %s", ", ".join(node_titles))
+            _log.info("已删除节点: %s", ", ".join(node_titles))
     
     def delete_selected(self):
         """删除选中节点（不使用撤销系统）"""

@@ -7,12 +7,15 @@
 
 import copy
 import uuid
-import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any
 from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Signal
+
+from workflow_extension.logger import get_logger
+
+_log = get_logger("Undo")
 
 
 class WorkflowCommand(ABC):
@@ -329,7 +332,7 @@ class WorkflowUndoStack(QObject):
             self.redo_stack.append(command)
             self._update_signals()
             self.stack_changed.emit()
-            logging.info("[Workflow] 已撤销操作")
+            _log.info("已撤销操作: %s", command.description)
         
         return success
     
@@ -345,7 +348,7 @@ class WorkflowUndoStack(QObject):
             self.undo_stack.append(command)
             self._update_signals()
             self.stack_changed.emit()
-            logging.info("[Workflow] 已重做操作")
+            _log.info("已重做操作: %s", command.description)
         
         return success
     

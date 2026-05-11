@@ -16,10 +16,12 @@ CW谱数据采集专用节点
 # encoding=utf-8
 import time
 import numpy as np
-import logging
 from PySide6.QtCore import QObject, Signal
 from manager import DevState
 from workflow_extension.node_registry import NodeSpec, NodePortSpec, NodeParamSpec
+from workflow_extension.logger import get_logger
+
+_log = get_logger("CW")
 
 
 def _exec_cw_spectrum_acquire(context, node, inputs):
@@ -137,9 +139,11 @@ def _exec_cw_spectrum_acquire(context, node, inputs):
             if state_manager is not None:
                 state_manager.set_state(DevState.IDLE)
 
-        logging.info(
-            f"CW谱采集: 通道={mw_channel}, 起始频率={start_freq}MHz, 结束频率={end_freq}MHz, "
-            f"步进频率={step_freq}MHz, 单点累加次数={single_point_count}, 点数={len(mw_freq)}"
+        _log.info(
+            "CW谱采集完成: 通道=%s, 起始频率=%sMHz, 结束频率=%sMHz, "
+            "步进频率=%sMHz, 单点累加次数=%s, 点数=%s",
+            mw_channel, start_freq, end_freq,
+            step_freq, single_point_count, len(mw_freq)
         )
 
         return {
@@ -154,7 +158,7 @@ def _exec_cw_spectrum_acquire(context, node, inputs):
             "point_count": int(len(mw_freq)),
         }
     except Exception as e:
-        logging.error(f"CW谱采集失败: {e}")
+        _log.error("CW谱采集失败: %s", e)
         return {"error": str(e)}
 
 
@@ -181,8 +185,8 @@ def _exec_lockin_config(context, node, inputs):
         sensitivity = float(node.params.get("sensitivity", 1.0))     # 灵敏度 (V)
         
         # 记录配置信息
-        logging.info(f"配置锁相放大器: 调制频率={mod_freq}Hz, 采样频率={sample_freq}Hz, "
-                     f"时间常数={time_constant}ms, 灵敏度={sensitivity}V")
+        _log.info("配置锁相放大器: 调制频率=%sHz, 采样频率=%sHz, "
+                     "时间常数=%sms, 灵敏度=%sV", mod_freq, sample_freq, time_constant, sensitivity)
         
         # 在实际应用中，这里会调用硬件API进行设备配置
         # context['app'].dev.set_lockin_params(mod_freq, sample_freq, time_constant, sensitivity)
@@ -195,7 +199,7 @@ def _exec_lockin_config(context, node, inputs):
             "sensitivity": sensitivity
         }
     except Exception as e:
-        logging.error(f"锁相放大器配置失败: {e}")
+        _log.error("锁相放大器配置失败: %s", e)
         return {"configured": False, "error": str(e)}
 
 
@@ -223,7 +227,7 @@ def _exec_mw_sweep_loop(context, node, inputs):
         # 生成线性频率序列
         freq_array = np.linspace(start_freq, stop_freq, num_points)
         
-        logging.info(f"微波扫频循环: 起始频率={start_freq}MHz, 终止频率={stop_freq}MHz, 点数={num_points}")
+        _log.info("微波扫频循环: 起始频率=%sMHz, 终止频率=%sMHz, 点数=%s", start_freq, stop_freq, num_points)
         
         # 初始化采集数据数组
         cw_data = []
@@ -256,7 +260,7 @@ def _exec_mw_sweep_loop(context, node, inputs):
             "num_points": num_points
         }
     except Exception as e:
-        logging.error(f"微波扫频循环失败: {e}")
+        _log.error("微波扫频循环失败: %s", e)
         return {"error": str(e)}
 
 
@@ -284,7 +288,7 @@ def _exec_mw_source_config(context, node, inputs):
         fm_sens = float(node.params.get("fm_sens", 1.0))   # FM灵敏度 (V/V)
         
         # 记录配置信息
-        logging.info(f"配置微波源: 频率={mw_freq}MHz, 功率={power}dBm, FM灵敏度={fm_sens}")
+        _log.info("配置微波源: 频率=%sMHz, 功率=%sdBm, FM灵敏度=%s", mw_freq, power, fm_sens)
         
         # 在实际应用中，这里会调用硬件API进行设备配置
         # context['app'].dev.set_mw_params(mw_freq * 1e6, power, fm_sens)
@@ -296,7 +300,7 @@ def _exec_mw_source_config(context, node, inputs):
             "fm_sens": fm_sens
         }
     except Exception as e:
-        logging.error(f"微波源配置失败: {e}")
+        _log.error("微波源配置失败: %s", e)
         return {"configured": False, "error": str(e)}
 
 
@@ -313,7 +317,7 @@ def _exec_lockin_read(context, node, inputs):
         # 模拟读取锁相放大器数据
         data = _simulate_lockin_reading(current_freq, sample_points, len(channels))
         
-        logging.info(f"读取锁相数据: 频率={current_freq}MHz, 通道={channels}, 采样点数={sample_points}")
+        _log.info("读取锁相数据: 频率=%sMHz, 通道=%s, 采样点数=%s", current_freq, channels, sample_points)
         
         return {
             "data": data,
@@ -322,7 +326,7 @@ def _exec_lockin_read(context, node, inputs):
             "sample_points": sample_points
         }
     except Exception as e:
-        logging.error(f"锁相数据读取失败: {e}")
+        _log.error("锁相数据读取失败: %s", e)
         return {"error": str(e)}
 
 
@@ -341,7 +345,7 @@ def _exec_data_average(context, node, inputs):
         else:
             cw_data_avg = cw_data
         
-        logging.info(f"数据平均处理: 输入形状={cw_data.shape}, 输出形状={cw_data_avg.shape}")
+        _log.info("数据平均处理: 输入形状=%s, 输出形状=%s", cw_data.shape, cw_data_avg.shape)
         
         return {
             "cw_data_avg": cw_data_avg,
@@ -349,7 +353,7 @@ def _exec_data_average(context, node, inputs):
             "processed_shape": cw_data_avg.shape
         }
     except Exception as e:
-        logging.error(f"数据平均处理失败: {e}")
+        _log.error("数据平均处理失败: %s", e)
         return {"error": str(e)}
 
 
@@ -394,7 +398,7 @@ def _exec_cw_visualization(context, node, inputs):
                     "show_legend": show_legend
                 })
         
-        logging.info(f"CW谱可视化: 数据点数={len(mw_freq)}, 通道数={cw_data_avg.shape[1]}")
+        _log.info("CW谱可视化: 数据点数=%s, 通道数=%s", len(mw_freq), cw_data_avg.shape[1])
         
         return {
             "visualized": True,
@@ -403,7 +407,7 @@ def _exec_cw_visualization(context, node, inputs):
             "plot_title": plot_title
         }
     except Exception as e:
-        logging.error(f"CW谱可视化失败: {e}")
+        _log.error("CW谱可视化失败: %s", e)
         return {"error": str(e)}
 
 
@@ -450,7 +454,7 @@ def _exec_cw_data_save(context, node, inputs):
                     y_val = cw_data_avg[i, 1] if cw_data_avg.shape[1] > 1 else 0
                     f.write(f"{freq:.6f}\t{x_val:.6f}\t{y_val:.6f}\n")
         
-        logging.info(f"CW谱数据保存: 文件={save_path}, 格式={file_format}")
+        _log.info("CW谱数据保存: 文件=%s, 格式=%s", save_path, file_format)
         
         return {
             "saved": True,
@@ -459,7 +463,7 @@ def _exec_cw_data_save(context, node, inputs):
             "data_shape": cw_data_avg.shape
         }
     except Exception as e:
-        logging.error(f"CW谱数据保存失败: {e}")
+        _log.error("CW谱数据保存失败: %s", e)
         return {"error": str(e)}
 
 

@@ -2168,3 +2168,156 @@
 2026-05-08 09:15:19,208 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
 2026-05-08 09:16:38,855 - [INFO] - root - [Workflow] 已添加节点: 选择设备
 2026-05-08 09:16:41,076 - [INFO] - root - [Workflow] 已添加节点: 初始化设备节点
+2026-05-08 09:50:21,221 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-08 09:50:21,222 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-08 09:50:21,223 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-08 09:50:24,810 - [INFO] - root - [Workflow] 已添加节点: 选择设备
+2026-05-08 09:50:27,624 - [INFO] - root - [Workflow] 已添加节点: 初始化设备节点
+2026-05-08 09:50:30,555 - [INFO] - root - [Workflow] 已连接节点: 选择设备.device_config -> 初始化设备节点.device_config
+2026-05-08 09:50:34,889 - [INFO] - root - [Workflow] 已添加节点: CW谱采集
+2026-05-08 09:50:40,355 - [INFO] - root - [Workflow] 已连接节点: 初始化设备节点.device_out -> CW谱采集.device_in
+2026-05-08 09:50:41,565 - [INFO] - root - [Workflow] 已添加节点: 数据显示
+2026-05-08 09:50:43,891 - [INFO] - root - [Workflow] 已连接节点: CW谱采集.data -> 数据显示.data_in
+2026-05-08 14:23:32,337 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-08 14:23:32,338 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-08 14:23:32,338 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-08 14:23:58,441 - [INFO] - Workflow.Tab - 已添加节点: 选择设备
+2026-05-08 14:24:00,561 - [INFO] - Workflow.Tab - 已添加节点: 初始化设备节点
+2026-05-08 14:24:02,960 - [INFO] - Workflow.Scene - 已连接节点: 选择设备.device_config -> 初始化设备节点.device_config
+2026-05-08 14:24:08,153 - [INFO] - Workflow.Tab - 已添加节点: CW谱采集
+2026-05-08 14:24:11,319 - [INFO] - Workflow.Scene - 已连接节点: 初始化设备节点.device_out -> CW谱采集.device_in
+2026-05-08 14:24:13,585 - [INFO] - Workflow.Tab - 已添加节点: 数据显示
+2026-05-08 14:24:16,528 - [INFO] - Workflow.Scene - 已连接节点: CW谱采集.data -> 数据显示.data_in
+2026-05-08 14:24:19,062 - [INFO] - Workflow.Tab - 开始执行工作流。
+2026-05-08 14:24:19,065 - [INFO] - Workflow.Tab - [RUN] node_ebbc26db
+2026-05-08 14:24:19,074 - [INFO] - Workflow.Engine - ▶ 开始执行 [选择设备(device.select)]
+2026-05-08 14:24:19,761 - [INFO] - Workflow.DeviceSelect - 设备选择: 设备名称=样机1 (WR04-02), 实验配置=config/exp_config_dev1.ini, 系统配置=config/system_config_dev1.ini, 锁相端口=interface/Lockin/usblib/module_64/libusb-1.0.dll, 超声电机端口=COM12, 日志路径=log/experiment_log_dev1.txt
+2026-05-08 14:24:19,761 - [INFO] - Workflow.Engine - ✔ 执行完成 [选择设备(device.select)] (输出={'device_name': '样机1 (WR04-02)', 'exp_config_path': 'config/exp_config_dev1.ini'...)
+2026-05-08 14:24:19,768 - [INFO] - Workflow.Tab - [OK] node_ebbc26db -> {'device_name': '样机1 (WR04-02)', 'exp_config_path': 'config/exp_config_dev1.ini', 'sys_config_path': 'config/system_config_dev1.ini', 'lockin_port': 'interface/Lockin/usblib/module_64/libusb-1.0.dll', 'ultramotor_port': 'COM12', 'log_path': 'log/experiment_log_dev1.txt'}
+2026-05-08 14:24:19,784 - [INFO] - Workflow.Tab - [RUN] node_8cbacdaa
+2026-05-08 14:24:19,796 - [DEBUG] - Workflow.Engine - ↗ 数据传递: 选择设备 → 初始化设备节点.device_config (数据: {'device_name': '样机1 (WR04-02)', 'exp_config_path'...)
+2026-05-08 14:24:19,797 - [INFO] - Workflow.Engine - ▶ 开始执行 [初始化设备节点(device.connect)]
+2026-05-08 14:24:19,797 - [INFO] - Workflow.DeviceInit - 当前不是实际采集设备，尝试自动连接设备。
+2026-05-08 14:24:19,798 - [DEBUG] - root - 尝试连接设备。
+2026-05-08 14:24:20,055 - [DEBUG] - root - 设备连接失败。[Could not find module '192.168.3.100:5005' (or one of its dependencies). Try using the full path with constructor syntax.]
+2026-05-08 14:24:20,055 - [INFO] - Workflow.Engine - ✔ 执行完成 [初始化设备节点(device.connect)] (输出={'connected': False, 'message': '未连接实际采集设备，请先连接设备', 'device_config': {}, 'compon...)
+2026-05-08 14:24:20,056 - [INFO] - Workflow.Tab - [OK] node_8cbacdaa -> {'connected': False, 'message': '未连接实际采集设备，请先连接设备', 'device_config': {}, 'components': {'lockin': False, 'laser': False, 'microwave': False, 'memory': False}}
+2026-05-08 14:24:20,067 - [INFO] - Workflow.Tab - [RUN] node_264bce58
+2026-05-08 14:24:20,078 - [DEBUG] - Workflow.Engine - ↗ 数据传递: 初始化设备节点 → CW谱采集.device_in (数据: {'connected': False, 'message': '未连接实际采集设备，请先连接设备'...)
+2026-05-08 14:24:20,078 - [INFO] - Workflow.Engine - ▶ 开始执行 [CW谱采集(cw.spectrum_acquire)]
+2026-05-08 14:24:20,078 - [ERROR] - Workflow.CW - CW谱采集失败: 设备未连接，请先在设备管理页连接设备
+2026-05-08 14:24:20,079 - [INFO] - Workflow.Engine - ✔ 执行完成 [CW谱采集(cw.spectrum_acquire)] (输出={'error': '设备未连接，请先在设备管理页连接设备'})
+2026-05-08 14:24:20,079 - [INFO] - Workflow.Tab - [OK] node_264bce58 -> {'error': '设备未连接，请先在设备管理页连接设备'}
+2026-05-08 14:24:20,091 - [INFO] - Workflow.Tab - [RUN] node_4d5b85ca
+2026-05-08 14:24:20,105 - [DEBUG] - Workflow.Engine - ↗ 数据传递: CW谱采集 → 数据显示.data_in (数据: {'error': '设备未连接，请先在设备管理页连接设备'})
+2026-05-08 14:24:20,106 - [INFO] - Workflow.Engine - ▶ 开始执行 [数据显示(data.display)]
+2026-05-08 14:24:20,106 - [WARNING] - Workflow.DataViz - 数据显示节点未收到有效数据: 设备未连接，请先在设备管理页连接设备
+2026-05-08 14:24:20,107 - [INFO] - Workflow.Engine - ✔ 执行完成 [数据显示(data.display)] (输出={'error': '上游数据无效: 设备未连接，请先在设备管理页连接设备'})
+2026-05-08 14:24:20,108 - [INFO] - Workflow.Tab - [OK] node_4d5b85ca -> {'error': '上游数据无效: 设备未连接，请先在设备管理页连接设备'}
+2026-05-08 14:24:20,119 - [INFO] - Workflow.Tab - 工作流执行结束。
+2026-05-08 15:10:10,774 - [INFO] - Workflow.Tab - 已添加节点: 全光谱采集
+2026-05-08 16:01:44,436 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-08 16:01:44,436 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-08 16:01:44,437 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-08 16:01:59,206 - [INFO] - Workflow.Tab - 已添加节点: 选择设备
+2026-05-08 16:02:01,056 - [INFO] - Workflow.Tab - 已添加节点: 初始化设备节点
+2026-05-08 16:02:05,733 - [INFO] - Workflow.Scene - 已连接节点: 选择设备.device_config -> 初始化设备节点.device_config
+2026-05-08 16:02:07,151 - [INFO] - Workflow.Tab - 已添加节点: CW谱采集
+2026-05-08 16:02:09,928 - [INFO] - Workflow.Scene - 已连接节点: 初始化设备节点.device_out -> CW谱采集.device_in
+2026-05-08 16:02:10,875 - [INFO] - Workflow.Tab - 已添加节点: 数据显示
+2026-05-08 16:02:14,159 - [INFO] - Workflow.Scene - 已连接节点: CW谱采集.data -> 数据显示.data_in
+2026-05-08 16:02:17,048 - [INFO] - Workflow.Tab - 开始执行工作流。
+2026-05-08 16:02:17,051 - [INFO] - Workflow.Tab - [RUN] node_a40be209
+2026-05-08 16:02:17,061 - [INFO] - Workflow.Engine - ▶ 开始执行 [选择设备(device.select)]
+2026-05-08 16:02:17,825 - [INFO] - Workflow.DeviceSelect - 设备选择: 设备名称=样机1 (WR04-02), 实验配置=config/exp_config_dev1.ini, 系统配置=config/system_config_dev1.ini, 锁相端口=interface/Lockin/usblib/module_64/libusb-1.0.dll, 超声电机端口=COM12, 日志路径=log/experiment_log_dev1.txt
+2026-05-08 16:02:17,826 - [INFO] - Workflow.Engine - ✔ 执行完成 [选择设备(device.select)] (输出={'device_name': '样机1 (WR04-02)', 'exp_config_path': 'config/exp_config_dev1.ini'...)
+2026-05-08 16:02:17,832 - [INFO] - Workflow.Tab - [OK] node_a40be209 -> {'device_name': '样机1 (WR04-02)', 'exp_config_path': 'config/exp_config_dev1.ini', 'sys_config_path': 'config/system_config_dev1.ini', 'lockin_port': 'interface/Lockin/usblib/module_64/libusb-1.0.dll', 'ultramotor_port': 'COM12', 'log_path': 'log/experiment_log_dev1.txt'}
+2026-05-08 16:02:17,843 - [INFO] - Workflow.Tab - [RUN] node_12bbe08a
+2026-05-08 16:02:17,852 - [DEBUG] - Workflow.Engine - ↗ 数据传递: 选择设备 → 初始化设备节点.device_config (数据: {'device_name': '样机1 (WR04-02)', 'exp_config_path'...)
+2026-05-08 16:02:17,852 - [INFO] - Workflow.Engine - ▶ 开始执行 [初始化设备节点(device.connect)]
+2026-05-08 16:02:17,853 - [INFO] - Workflow.DeviceInit - 当前不是实际采集设备，尝试自动连接设备。
+2026-05-08 16:02:17,854 - [DEBUG] - root - 尝试连接设备。
+2026-05-08 16:02:17,890 - [DEBUG] - root - 设备连接失败。[Could not find module '192.168.3.100:5005' (or one of its dependencies). Try using the full path with constructor syntax.]
+2026-05-08 16:02:17,892 - [INFO] - Workflow.Engine - ✔ 执行完成 [初始化设备节点(device.connect)] (输出={'connected': False, 'message': '未连接实际采集设备，请先连接设备', 'device_config': {}, 'compon...)
+2026-05-08 16:02:17,892 - [INFO] - Workflow.Tab - [OK] node_12bbe08a -> {'connected': False, 'message': '未连接实际采集设备，请先连接设备', 'device_config': {}, 'components': {'lockin': False, 'laser': False, 'microwave': False, 'memory': False}}
+2026-05-08 16:02:17,901 - [INFO] - Workflow.Tab - [RUN] node_b8486b68
+2026-05-08 16:02:17,910 - [DEBUG] - Workflow.Engine - ↗ 数据传递: 初始化设备节点 → CW谱采集.device_in (数据: {'connected': False, 'message': '未连接实际采集设备，请先连接设备'...)
+2026-05-08 16:02:17,911 - [INFO] - Workflow.Engine - ▶ 开始执行 [CW谱采集(cw.spectrum_acquire)]
+2026-05-08 16:02:17,911 - [ERROR] - Workflow.CW - CW谱采集失败: 设备未连接，请先在设备管理页连接设备
+2026-05-08 16:02:17,912 - [INFO] - Workflow.Engine - ✔ 执行完成 [CW谱采集(cw.spectrum_acquire)] (输出={'error': '设备未连接，请先在设备管理页连接设备'})
+2026-05-08 16:02:17,912 - [INFO] - Workflow.Tab - [OK] node_b8486b68 -> {'error': '设备未连接，请先在设备管理页连接设备'}
+2026-05-08 16:02:17,921 - [INFO] - Workflow.Tab - [RUN] node_ad6d01fd
+2026-05-08 16:02:17,930 - [DEBUG] - Workflow.Engine - ↗ 数据传递: CW谱采集 → 数据显示.data_in (数据: {'error': '设备未连接，请先在设备管理页连接设备'})
+2026-05-08 16:02:17,931 - [INFO] - Workflow.Engine - ▶ 开始执行 [数据显示(data.display)]
+2026-05-08 16:02:17,931 - [WARNING] - Workflow.DataViz - 数据显示节点未收到有效数据: 设备未连接，请先在设备管理页连接设备
+2026-05-08 16:02:17,931 - [INFO] - Workflow.Engine - ✔ 执行完成 [数据显示(data.display)] (输出={'error': '上游数据无效: 设备未连接，请先在设备管理页连接设备'})
+2026-05-08 16:02:17,932 - [INFO] - Workflow.Tab - [OK] node_ad6d01fd -> {'error': '上游数据无效: 设备未连接，请先在设备管理页连接设备'}
+2026-05-08 16:02:17,941 - [INFO] - Workflow.Tab - 工作流执行结束。
+2026-05-08 16:16:10,576 - [INFO] - Workflow.Tab - 已添加节点: 超声电机状态
+2026-05-08 16:16:26,984 - [DEBUG] - Workflow.Scene - start dragging existing edge from input
+2026-05-08 16:16:27,025 - [INFO] - Workflow.Scene - 已断开连接: CW谱采集.data -> 数据显示.data_in
+2026-05-08 16:16:27,026 - [DEBUG] - Workflow.Scene - edge deleted after drag with no connection
+2026-05-08 17:03:10,949 - [INFO] - Workflow.Undo - 已撤销操作: 移动 1 个节点
+2026-05-08 17:03:10,950 - [INFO] - Workflow.Tab - 已撤销: 删除连接: node_b8486b68.data -> node_ad6d01fd.data_in
+2026-05-08 17:03:11,652 - [INFO] - Workflow.Undo - 已撤销操作: 删除连接: node_b8486b68.data -> node_ad6d01fd.data_in
+2026-05-08 17:03:11,653 - [INFO] - Workflow.Tab - 已撤销: 添加节点: 超声电机状态
+2026-05-08 17:03:12,507 - [INFO] - Workflow.Undo - 已撤销操作: 添加节点: 超声电机状态
+2026-05-08 17:03:12,507 - [INFO] - Workflow.Tab - 已撤销: 添加连接: node_b8486b68.data -> node_ad6d01fd.data_in
+2026-05-08 17:03:13,340 - [INFO] - Workflow.Undo - 已撤销操作: 添加连接: node_b8486b68.data -> node_ad6d01fd.data_in
+2026-05-08 17:03:13,341 - [INFO] - Workflow.Tab - 已撤销: 添加节点: 数据显示
+2026-05-08 17:03:13,852 - [INFO] - Workflow.Undo - 已撤销操作: 添加节点: 数据显示
+2026-05-08 17:03:13,852 - [INFO] - Workflow.Tab - 已撤销: 添加连接: node_12bbe08a.device_out -> node_b8486b68.device_in
+2026-05-08 17:03:14,492 - [INFO] - Workflow.Undo - 已撤销操作: 添加连接: node_12bbe08a.device_out -> node_b8486b68.device_in
+2026-05-08 17:03:14,493 - [INFO] - Workflow.Tab - 已撤销: 添加节点: CW谱采集
+2026-05-08 17:03:14,700 - [INFO] - Workflow.Undo - 已撤销操作: 添加节点: CW谱采集
+2026-05-08 17:03:14,701 - [INFO] - Workflow.Tab - 已撤销: 添加连接: node_a40be209.device_config -> node_12bbe08a.device_config
+2026-05-08 17:03:14,885 - [INFO] - Workflow.Undo - 已撤销操作: 添加连接: node_a40be209.device_config -> node_12bbe08a.device_config
+2026-05-08 17:03:14,885 - [INFO] - Workflow.Tab - 已撤销: 添加节点: 初始化设备节点
+2026-05-08 17:03:15,052 - [INFO] - Workflow.Undo - 已撤销操作: 添加节点: 初始化设备节点
+2026-05-08 17:03:15,053 - [INFO] - Workflow.Tab - 已撤销: 添加节点: 选择设备
+2026-05-08 17:03:15,228 - [INFO] - Workflow.Undo - 已撤销操作: 添加节点: 选择设备
+2026-05-08 17:03:15,230 - [INFO] - Workflow.Tab - 已撤销: 撤销
+2026-05-08 17:03:16,667 - [INFO] - Workflow.Undo - 已重做操作: 添加节点: 选择设备
+2026-05-08 17:03:16,668 - [INFO] - Workflow.Tab - 已重做: 添加节点: 初始化设备节点
+2026-05-08 17:03:16,889 - [INFO] - Workflow.Undo - 已重做操作: 添加节点: 初始化设备节点
+2026-05-08 17:03:16,890 - [INFO] - Workflow.Tab - 已重做: 添加连接: node_a40be209.device_config -> node_12bbe08a.device_config
+2026-05-08 17:03:17,122 - [INFO] - Workflow.Undo - 已重做操作: 添加连接: node_a40be209.device_config -> node_12bbe08a.device_config
+2026-05-08 17:03:17,123 - [INFO] - Workflow.Tab - 已重做: 添加节点: CW谱采集
+2026-05-08 17:03:17,280 - [INFO] - Workflow.Undo - 已重做操作: 添加节点: CW谱采集
+2026-05-08 17:03:17,280 - [INFO] - Workflow.Tab - 已重做: 添加连接: node_12bbe08a.device_out -> node_b8486b68.device_in
+2026-05-08 17:03:17,564 - [INFO] - Workflow.Undo - 已重做操作: 添加连接: node_12bbe08a.device_out -> node_b8486b68.device_in
+2026-05-08 17:03:17,564 - [INFO] - Workflow.Tab - 已重做: 添加节点: 数据显示
+2026-05-08 17:03:17,737 - [INFO] - Workflow.Undo - 已重做操作: 添加节点: 数据显示
+2026-05-08 17:03:17,738 - [INFO] - Workflow.Tab - 已重做: 添加连接: node_b8486b68.data -> node_ad6d01fd.data_in
+2026-05-08 17:03:17,881 - [INFO] - Workflow.Undo - 已重做操作: 添加连接: node_b8486b68.data -> node_ad6d01fd.data_in
+2026-05-08 17:03:17,883 - [INFO] - Workflow.Tab - 已重做: 添加节点: 超声电机状态
+2026-05-08 17:03:18,050 - [INFO] - Workflow.Undo - 已重做操作: 添加节点: 超声电机状态
+2026-05-08 17:03:18,051 - [INFO] - Workflow.Tab - 已重做: 删除连接: node_b8486b68.data -> node_ad6d01fd.data_in
+2026-05-08 17:03:18,188 - [INFO] - Workflow.Undo - 已重做操作: 删除连接: node_b8486b68.data -> node_ad6d01fd.data_in
+2026-05-08 17:03:18,189 - [INFO] - Workflow.Tab - 已重做: 移动 1 个节点
+2026-05-08 17:03:18,379 - [INFO] - Workflow.Undo - 已重做操作: 移动 1 个节点
+2026-05-08 17:03:18,381 - [INFO] - Workflow.Tab - 已重做: 重做
+2026-05-09 10:37:12,203 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-09 10:37:12,204 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-09 10:37:12,205 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-09 16:14:16,735 - [DEBUG] - root - 尝试连接设备。
+2026-05-09 16:14:16,814 - [DEBUG] - root - 设备连接失败。[Could not find module '192.168.3.100:5005' (or one of its dependencies). Try using the full path with constructor syntax.]
+2026-05-09 16:14:19,635 - [INFO] - Workflow.Tab - 已添加节点: 选择设备
+2026-05-09 16:14:26,881 - [INFO] - Workflow.Tab - 已添加节点: 初始化设备节点
+2026-05-09 18:04:21,882 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-09 18:04:21,883 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-09 18:04:21,883 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-11 09:10:06,947 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-11 09:10:06,948 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-11 09:10:06,948 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-11 09:21:37,231 - [INFO] - Workflow.Tab - 已添加节点: 选择设备
+2026-05-11 09:21:40,798 - [INFO] - Workflow.Tab - 已添加节点: 初始化设备节点
+2026-05-11 09:21:42,651 - [INFO] - Workflow.Undo - 已撤销操作: 移动 1 个节点
+2026-05-11 09:21:43,203 - [INFO] - Workflow.Undo - 已撤销操作: 添加节点: 初始化设备节点
+2026-05-11 09:21:44,849 - [INFO] - Workflow.Undo - 已重做操作: 添加节点: 初始化设备节点
+2026-05-11 09:21:45,211 - [INFO] - Workflow.Undo - 已重做操作: 移动 1 个节点
+2026-05-11 09:21:48,744 - [INFO] - Workflow.Scene - 已删除节点: 选择设备
+2026-05-11 09:24:28,180 - [INFO] - root - 日志系统已初始化 - 设备: 样机1
+2026-05-11 09:24:28,182 - [INFO] - root - ※初次上电时请注意，在进行其他操作前需要先点击[下发所有配置]按钮进行初始化。
+2026-05-11 09:24:28,183 - [DEBUG] - root - 系统切换状态：从 [INIT] 进入 [OFFLINE]。
+2026-05-11 09:24:35,769 - [INFO] - Workflow.Tab - 已添加节点: 选择设备

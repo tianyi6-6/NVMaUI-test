@@ -8,8 +8,10 @@
 # encoding=utf-8
 import time
 import numpy as np
-import logging
 from workflow_extension.node_registry import NodeSpec, NodePortSpec, NodeParamSpec
+from workflow_extension.logger import get_logger
+
+_log = get_logger("AllOptical")
 
 
 def _exec_all_optical_acquire(context, node, inputs):
@@ -41,7 +43,7 @@ def _exec_all_optical_acquire(context, node, inputs):
         while current_motor_angle <= stop_motor_angle:
             current_angle = app.ultramotor.get_angle()
             forward_angle = (current_angle - current_motor_angle) % 360
-            logging.info(f"当前角度：{current_angle}, 目标角度：{current_motor_angle}, 判断正转所需：{forward_angle}")
+            _log.debug("当前角度：%s, 目标角度：%s, 判断正转所需：%s", current_angle, current_motor_angle, forward_angle)
 
             motor_direction_flag = forward_angle > 180
             app.ultramotor.rotate_motor(speed, current_motor_angle, direction=motor_direction_flag)
@@ -58,7 +60,7 @@ def _exec_all_optical_acquire(context, node, inputs):
             fluo_dc_list.append(fluo_dc)
             laser_dc_list.append(laser_dc)
 
-            logging.info(f'设置角度：{current_motor_angle}° 测量角度：{real_motor_angle}°')
+            _log.debug("设置角度：%s° 测量角度：%s°", current_motor_angle, real_motor_angle)
 
             if callback:
                 callback({"x": real_motor_angle, "y": fluo_dc, "y2": laser_dc})
@@ -78,9 +80,11 @@ def _exec_all_optical_acquire(context, node, inputs):
 
             current_motor_angle += step_motor_angle
 
-        logging.info(
-            f"全光谱采集: 起始角度={start_motor_angle}°, 结束角度={stop_motor_angle}°, "
-            f"步进角度={step_motor_angle}°, 点数={len(motor_angle_list)}"
+        _log.info(
+            "全光谱采集完成: 起始角度=%s°, 结束角度=%s°, "
+            "步进角度=%s°, 点数=%s",
+            start_motor_angle, stop_motor_angle,
+            step_motor_angle, len(motor_angle_list)
         )
 
         return {
@@ -91,7 +95,7 @@ def _exec_all_optical_acquire(context, node, inputs):
             "point_count": len(motor_angle_list),
         }
     except Exception as e:
-        logging.error(f"全光谱采集失败: {e}")
+        _log.error("全光谱采集失败: %s", e)
         return {"error": str(e)}
 
 

@@ -6,8 +6,10 @@
 """
 
 # encoding=utf-8
-import logging
 from workflow_extension.node_registry import NodeSpec, NodePortSpec, NodeParamSpec
+from workflow_extension.logger import get_logger
+
+_log = get_logger("DeviceSelect")
 
 
 # 设备配置映射
@@ -88,10 +90,13 @@ def _exec_device_select(context, node, inputs):
             ultramotor_port = str(node.params.get("ultramotor_port", "COM12"))
             log_path = str(node.params.get("log_path", "log/experiment_log_dev1.txt"))
 
-        logging.info(
-            f"设备选择: 设备名称={device_name}, 实验配置={exp_config_path}, "
-            f"系统配置={sys_config_path}, 锁相端口={lockin_port}, "
-            f"超声电机端口={ultramotor_port}, 日志路径={log_path}"
+        _log.info(
+            "设备选择: 设备名称=%s, 实验配置=%s, "
+            "系统配置=%s, 锁相端口=%s, "
+            "超声电机端口=%s, 日志路径=%s",
+            device_name, exp_config_path,
+            sys_config_path, lockin_port,
+            ultramotor_port, log_path
         )
 
         # 返回设备配置信息
@@ -104,7 +109,7 @@ def _exec_device_select(context, node, inputs):
             "log_path": log_path,
         }
     except Exception as e:
-        logging.error(f"设备选择失败: {e}")
+        _log.error("设备选择失败: %s", e)
         return {"error": str(e)}
 
 

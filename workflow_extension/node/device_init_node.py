@@ -1,9 +1,11 @@
 """初始化设备节点：一级分类 + 二级分类 + 三级参数项。"""
 
 import re
-import logging
 
 from workflow_extension.node_registry import NodeParamSpec, NodePortSpec, NodeRegistry, NodeSpec
+from workflow_extension.logger import get_logger
+
+_log = get_logger("DeviceInit")
 
 
 def _extract_numeric(value, default=0.0):
@@ -43,7 +45,7 @@ def _exec_device_connect(context, node, inputs):
     dev = getattr(app, "dev", None) if app is not None else None
     connected = bool(app and dev is not None and hasattr(dev, "IIR_play"))
     if app is not None and not connected and hasattr(app, "connect_dev"):
-        logging.info("工作流初始化设备节点：当前不是实际采集设备，尝试自动连接设备。")
+        _log.info("当前不是实际采集设备，尝试自动连接设备。")
         app.connect_dev()
         dev = getattr(app, "dev", None)
         connected = bool(dev is not None and hasattr(dev, "IIR_play"))
@@ -58,11 +60,11 @@ def _exec_device_connect(context, node, inputs):
     # 从上游节点获取设备配置（如果有）
     upstream_config = inputs.get("device_config", {})
     if upstream_config:
-        logging.info("工作流初始化设备节点：接收到上游设备配置: %s", upstream_config.get("device_name", "未知设备"))
+        _log.info("接收到上游设备配置: %s", upstream_config.get("device_name", "未知设备"))
 
     try:
         if hasattr(app, "param_inputs") and hasattr(app, "set_param"):
-            logging.info("工作流初始化设备节点：开始下发所有设备配置。")
+            _log.info("开始下发所有设备配置。")
             for name, field in app.param_inputs.items():
                 app.set_param(name, field.text(), delay_flag=True)
             if hasattr(app, "device_param_buttons"):
@@ -70,9 +72,9 @@ def _exec_device_connect(context, node, inputs):
                     button.click()
             if hasattr(app, "config_sent_signal"):
                 app.config_sent_signal.emit(True)
-            logging.info("工作流初始化设备节点：设备配置下发完成。")
+            _log.info("设备配置下发完成。")
     except Exception as exc:
-        logging.error(f"工作流初始化设备节点：设备配置下发失败: {exc}")
+        _log.error("设备配置下发失败: %s", exc)
         return {
             "connected": False,
             "message": f"设备配置下发失败: {exc}",
