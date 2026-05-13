@@ -14,7 +14,7 @@ if __name__ == '__main__':
     exp_config_path = "config/exp_config_dev1.ini"
     sys_config_path = "config/system_config_dev1.ini"
     lockin_port = "interface/Lockin/usblib/module_64/libusb-1.0.dll"  # 锁相TCP/IP通信
-    ultramotor_port = "COM12"  # RS485-电机串口通信
+    ultramotor_port = "COM7"  # RS485-电机串口通信
     log_path = "log/experiment_log_dev1.txt"
     
     # 创建并显示主窗口

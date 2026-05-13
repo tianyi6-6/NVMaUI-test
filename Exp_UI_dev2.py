@@ -14,7 +14,7 @@ if __name__ == '__main__':
     exp_config_path = "config/exp_config_dev2.ini"
     sys_config_path = "config/system_config_dev2.ini"
     lockin_port = "192.168.3.100:5005"  # TCP/IP通信
-    ultramotor_port = "COM4"  # RS485-串口通信
+    ultramotor_port = "COM7"  # RS485-串口通信
     log_path = "log/experiment_log_dev2.txt"
     
     # 创建并显示主窗口

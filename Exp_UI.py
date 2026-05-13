@@ -41,10 +41,17 @@ from utils.signal_process import *
 
 from interface.Thermometer_4ch import Thermometer_4CH_Backend
 from interface.usm20 import Ultramotor_Backend
-# from interface.Lockin.Test_LIA_Mini_DoubleMW import LIA_API
-from interface.Lockin.LIA_Mini_DoubleMW import LIA_API
-# from interface.Lockin.LIA_Mini_DoubleMW_RS485 import LIA_API
-# from interface.Lockin.LIA_Mini_DoubleMW_Ethernet_20250717 import LIA_API
+
+def get_lia_api(lockin_port):
+    if ':' in lockin_port and lockin_port.replace('.', '').replace(':', '').replace('-', '').isdigit():
+        from interface.Lockin.LIA_Mini_DoubleMW_Ethernet_20250717 import LIA_API
+        return LIA_API
+    elif '.dll' in lockin_port.lower() or '.so' in lockin_port.lower():
+        from interface.Lockin.LIA_Mini_DoubleMW import LIA_API
+        return LIA_API
+    else:
+        from interface.Lockin.LIA_Mini_DoubleMW import LIA_API
+        return LIA_API
 
 class LogSignal(QObject):
     new_log = Signal(str)
@@ -68,7 +75,7 @@ class ExperimentApp(QWidget):
     
     def __init__(self, device_name="样机1", exp_config_path="config/exp_config_dev1.ini", 
                  sys_config_path="config/system_config_dev1.ini", lockin_port="192.168.3.100:5005", 
-                 ultramotor_port="COM12", log_path="log/experiment_log.txt"):
+                 ultramotor_port="COM7", log_path="log/experiment_log.txt"):
         super().__init__()
         
         # 保存配置参数
@@ -861,7 +868,7 @@ class ExperimentApp(QWidget):
             logging.debug("尝试连接设备。")
             try:
                 # self.dev = Device() # todo：替换为设备连接与初始化内容
-                # self.dev = LIA_API(libusb_path=self.libusb_path)
+                LIA_API = get_lia_api(self.lockin_port)
                 self.dev = LIA_API(port=self.lockin_port)
                 if self.dev.connect_device():
                     # 设备连接成功
