@@ -28,7 +28,7 @@ from pyqtgraph.exporters import ImageExporter
 from manager import *
 from dc_panel import OscilloscopeDCPanel
 from daq_panel import OscilloscopePanel
-# from iir_panel import OscilloscopeIIRPanel
+from iir_panel import OscilloscopeIIRPanel
 from iir_dc_panel import OscilloscopeIIRDCPanel
 from cw_panel import OscilloscopeCWPanel
 from dc_cw_panel import OscilloscopeDCCWPanel
@@ -42,6 +42,7 @@ from utils.signal_process import *
 
 from interface.Thermometer_4ch import Thermometer_4CH_Backend
 from interface.usm20 import Ultramotor_Backend
+
 
 def get_lia_api(lockin_port):
     if ':' in lockin_port and lockin_port.replace('.', '').replace(':', '').replace('-', '').isdigit():
@@ -76,7 +77,7 @@ class ExperimentApp(QWidget):
     
     def __init__(self, device_name="样机1", exp_config_path="config/exp_config_dev1.ini", 
                  sys_config_path="config/system_config_dev1.ini", lockin_port="192.168.3.100:5005", 
-                 ultramotor_port="COM7", log_path="log/experiment_log.txt"):
+                 ultramotor_port="COM12", log_path="log/experiment_log.txt"):
         super().__init__()
         
         # 保存配置参数
@@ -869,6 +870,7 @@ class ExperimentApp(QWidget):
             logging.debug("尝试连接设备。")
             try:
                 # self.dev = Device() # todo：替换为设备连接与初始化内容
+                # self.dev = LIA_API(libusb_path=self.libusb_path)
                 LIA_API = get_lia_api(self.lockin_port)
                 self.dev = LIA_API(port=self.lockin_port)
                 if self.dev.connect_device():
