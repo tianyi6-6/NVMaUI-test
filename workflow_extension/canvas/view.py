@@ -63,6 +63,34 @@ class WorkflowCanvasView(QGraphicsView):
         
         # 启用键盘快捷键
         self.setFocusPolicy(Qt.StrongFocus)
+        self._visibility_timer = QTimer(self)
+        self._visibility_timer.setSingleShot(True)
+        self._visibility_timer.timeout.connect(self._check_node_visibility)
+        self.viewport().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        if obj is self.viewport() and event.type() in (QEvent.Scroll, QEvent.Resize):
+            self._visibility_timer.start(150)
+        return super().eventFilter(obj, event)
+
+    def _check_node_visibility(self):
+        if not self.scene():
+            return
+        viewport_rect = self.viewport().rect()
+        visible_scene_rect = self.mapToScene(viewport_rect).boundingRect()
+        margin = 200
+        visible_scene_rect = visible_scene_rect.adjusted(-margin, -margin, margin, margin)
+        from workflow_extension.canvas.items.node_item import WorkflowNodeItem
+        for item in self.scene().items():
+            if isinstance(item, WorkflowNodeItem):
+                node_rect = item.mapToScene(item.rect()).boundingRect()
+                is_visible = visible_scene_rect.intersects(node_rect)
+                if is_visible and item.is_expanded and item._proxy is None:
+                    item.render_params_ui()
+                elif not is_visible and item.is_expanded and item._proxy is not None:
+                    item._sync_params_from_widgets()
+                    item.destroy_params_ui()
 
     def _update_overlay(self, view_pos=None, force_show=False):
         """更新坐标和缩放比例显示标签
@@ -130,6 +158,7 @@ class WorkflowCanvasView(QGraphicsView):
             self._pan_start = None
             self.setCursor(Qt.ArrowCursor)
             self._overlay.hide()
+            self._visibility_timer.start(150)
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -262,5 +291,5 @@ class WorkflowCanvasView(QGraphicsView):
         self._update_overlay(event.position().toPoint(), force_show=True)
         self._overlay_timer.start(900)
         
-        # 确保缩放时画布可以扩展
+        self._visibility_timer.start(150)
         self._ensure_infinite_canvas()

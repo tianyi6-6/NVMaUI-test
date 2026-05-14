@@ -86,7 +86,11 @@ class WorkflowNodeItem(QGraphicsRectItem):
         self._proxy = None
         # 参数编辑器字典：key -> widget
         self._param_editors = {}
-        # 节点大小限制
+        self.params_store = dict(model.params)
+        self.param_widgets = {}
+        self.is_expanded = False
+        self._collapse_btn_rect = QRectF()
+        self._pending_specs = None
         self._min_node_width = 260
         self._min_node_height = 130
         self._max_node_width = 920
@@ -104,9 +108,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
         self._edit_event_filter = None  # 事件过滤器
         # 启用悬停事件（用于调整大小光标）
         self.setAcceptHoverEvents(self._enable_extended_node_ui)
-        # 构建参数控件
-        self._build_param_widget()
-        # 恢复保存的节点大小
+        self.setRect(0, 0, 280, self._header_h + 10)
         if self._enable_extended_node_ui:
             saved_size = self.model.params.get("__node_size__")
             if isinstance(saved_size, (list, tuple)) and len(saved_size) == 2:
@@ -115,7 +117,6 @@ class WorkflowNodeItem(QGraphicsRectItem):
                     self._user_resized = True
                 except (TypeError, ValueError):
                     pass
-        # 重建端口位置
         self._rebuild_ports()
 
     def _build_param_widget(self):
@@ -178,7 +179,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
                         else f"__selected_subcategory__::{category_name}"
                     )
                     legacy_key = f"__selected_subcategory__::{category_name}"
-                    saved_subcategory = str(self.model.params.get(selected_key, self.model.params.get(legacy_key, "")))
+                    saved_subcategory = str(self.params_store.get(selected_key, self.params_store.get(legacy_key, "")))
                     default_subcategory = saved_subcategory if saved_subcategory in subcategory_names else subcategory_names[0]
                     selector.setCurrentText(default_subcategory)
                     self.model.params[selected_key] = default_subcategory
@@ -204,7 +205,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
                 form.setContentsMargins(0, 0, 0, 0)
                 form.setSpacing(4)
                 for p in specs:
-                    current = self.model.params.get(p.key, "")
+                    current = self.params_store.get(p.key, "")
                     self._add_param_to_form(form, p, current)
                 main_layout.addLayout(form)
 
@@ -224,7 +225,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
             form.setContentsMargins(8, 4, 8, 4)
             form.setSpacing(4)
             for p in specs[:4]:
-                current = self.model.params.get(p.key, "")
+                current = self.params_store.get(p.key, "")
                 self._add_param_to_form(form, p, current)
         
         self._proxy = QGraphicsProxyWidget(self)
@@ -557,11 +558,12 @@ class WorkflowNodeItem(QGraphicsRectItem):
     def _fill_subcategory_form(self, form_layout, param_specs):
         self._clear_form_layout(form_layout)
         for p in param_specs:
-            current = self.model.params.get(p.key, "")
+            current = self.params_store.get(p.key, "")
             self._add_param_to_form(form_layout, p, current)
 
     def _on_subcategory_changed(self, selected_key, subgroups, form_layout, selected_subcategory):
         self.model.params[selected_key] = selected_subcategory
+        self.params_store[selected_key] = selected_subcategory
         self._fill_subcategory_form(form_layout, subgroups.get(selected_subcategory, []))
         if self._enable_extended_node_ui:
             self._resize_to_content_if_needed()
@@ -576,6 +578,7 @@ class WorkflowNodeItem(QGraphicsRectItem):
             value: 参数值
         """
         self.model.params[key] = value
+        self.params_store[key] = value
 
         # 处理参数依赖
         if self.spec and hasattr(self.spec, 'on_param_change'):
@@ -583,8 +586,9 @@ class WorkflowNodeItem(QGraphicsRectItem):
                 updates = self.spec.on_param_change(key, value, self.model.params)
                 if updates:
                     for update_key, update_value in updates.items():
-                        if update_key != key:  # 避免循环更新
+                        if update_key != key:
                             self.model.params[update_key] = update_value
+                            self.params_store[update_key] = update_value
                             # 更新UI中的对应编辑器
                             self._update_param_editor(update_key, update_value)
 
@@ -633,7 +637,8 @@ class WorkflowNodeItem(QGraphicsRectItem):
             QTimer.singleShot(0, self._refresh_after_apply_pending)
 
     def _refresh_after_apply_pending(self):
-        self._build_param_widget()
+        if self.is_expanded and self._proxy is not None:
+            self._build_param_widget()
         self._rebuild_ports()
         if self._on_param_changed:
             self._on_param_changed(self.model)
@@ -706,6 +711,63 @@ class WorkflowNodeItem(QGraphicsRectItem):
         for i, p in enumerate(self.spec.output_ports):
             self._output_ports[p.name] = QPointF(self.rect().width() - 6, right_base + i * 22)
 
+    def toggle_collapse(self):
+        if self.is_expanded:
+            self._sync_params_from_widgets()
+            self.destroy_params_ui()
+            self.is_expanded = False
+            self.setRect(0, 0, self.rect().width(), self._header_h + 10)
+        else:
+            self.is_expanded = True
+            self.render_params_ui()
+        self._rebuild_ports()
+        if self.scene():
+            self.scene().update_edges_for_node(self.model.node_id)
+        self.update()
+
+    def render_params_ui(self):
+        if self._proxy is not None:
+            return
+        self._build_param_widget()
+        if self._proxy is not None and self._proxy.widget() is not None:
+            widget = self._proxy.widget()
+            widget.adjustSize()
+            if self._enable_extended_node_ui:
+                hint_w = widget.sizeHint().width() + 22
+                hint_h = self._header_h + 36 + widget.sizeHint().height()
+                if not self._user_resized:
+                    self._apply_node_size(hint_w, hint_h, user_resized=False)
+                else:
+                    cur = self.rect()
+                    self._apply_node_size(cur.width(), max(cur.height(), hint_h), user_resized=True)
+            else:
+                target_h = max(130, self._header_h + 36 + widget.sizeHint().height())
+                self.setRect(0, 0, 280, target_h)
+        self._rebuild_ports()
+
+    def destroy_params_ui(self):
+        if self._proxy is not None:
+            scene = self.scene()
+            if scene is not None:
+                scene.removeItem(self._proxy)
+            self._proxy = None
+        self._param_editors.clear()
+        self.param_widgets.clear()
+
+    def _sync_params_from_widgets(self):
+        for key, editor in self._param_editors.items():
+            if isinstance(editor, HighPrecisionSpinBox):
+                self.params_store[key] = editor.text()
+            elif isinstance(editor, QLineEdit):
+                self.params_store[key] = editor.text().strip()
+            elif isinstance(editor, QSpinBox):
+                self.params_store[key] = editor.value()
+            elif isinstance(editor, QComboBox):
+                self.params_store[key] = editor.currentText()
+            elif isinstance(editor, QCheckBox):
+                self.params_store[key] = editor.isChecked()
+        self.model.params.update(self.params_store)
+
     def anchor(self, port_name, is_output):
         """获取指定端口的场景坐标
         
@@ -765,6 +827,10 @@ class WorkflowNodeItem(QGraphicsRectItem):
         super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self._collapse_btn_rect.contains(event.pos()):
+            self.toggle_collapse()
+            event.accept()
+            return
         if self._enable_extended_node_ui and event.button() == Qt.LeftButton and self._resize_handle_rect().contains(event.pos()):
             self._is_resizing = True
             self._resize_start_scene_pos = event.scenePos()
@@ -967,6 +1033,16 @@ class WorkflowNodeItem(QGraphicsRectItem):
         painter.drawEllipse(QPointF(14, 17), 5, 5)
         painter.setBrush(QBrush(QColor("#17b34a")))
         painter.drawEllipse(QPointF(body_rect.width() - 14, 17), 4, 4)
+
+        btn_size = 16
+        btn_x = body_rect.width() - btn_size - 8
+        btn_y = (self._header_h - btn_size) / 2
+        self._collapse_btn_rect = QRectF(btn_x, btn_y, btn_size, btn_size)
+        painter.setPen(QPen(QColor("#555555"), 1))
+        painter.setBrush(QBrush(QColor("#d0d0d0")))
+        painter.drawRoundedRect(self._collapse_btn_rect, 3, 3)
+        painter.setPen(QPen(QColor("#333333")))
+        painter.drawText(self._collapse_btn_rect, Qt.AlignCenter, "▼" if not self.is_expanded else "▲")
 
         # 移除英文node_type显示，只保留中文标题
         # painter.setPen(QPen(QColor("#6f6f6f")))

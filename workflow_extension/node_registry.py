@@ -64,6 +64,7 @@ class NodeParamSpec:
     current_value: str = ""  # 当前值
     valid_range: str = ""  # 合法范围
     unit: str = ""  # 单位
+    visibility: str = "advanced"
 
 
 @dataclass

@@ -22,7 +22,7 @@ def _extract_numeric_text(value, default="0"):
     return matched.group() if matched else str(default)
 
 
-def _make_param(category, key, editor, current_value, valid_range, *, options=None, minimum=0.0, maximum=999999.0, step=1.0, unit=""):
+def _make_param(category, key, editor, current_value, valid_range, *, options=None, minimum=0.0, maximum=999999.0, step=1.0, unit="", visibility="advanced"):
     return NodeParamSpec(
         key=key,
         label=key,
@@ -37,6 +37,7 @@ def _make_param(category, key, editor, current_value, valid_range, *, options=No
         current_value=current_value,
         valid_range=valid_range,
         unit=unit,
+        visibility=visibility,
     )
 
 
@@ -175,11 +176,11 @@ def register_device_init_nodes(registry: NodeRegistry):
     ]
 
     laser_params = [
-        _make_param("激光器", "激光器电流", "float", "0.8A", "0.0-2.0", minimum=0, maximum=2, step=0.1, unit="A"),
+        _make_param("激光器", "激光器电流", "float", "0.8A", "0.0-2.0", minimum=0, maximum=2, step=0.1, unit="A", visibility="required"),
     ]
 
     microwave_params = [
-        _make_param("微波源", "CH1微波功率", "int", "16dBm", "0-30", minimum=0, maximum=30, step=1, unit="dBm"),
+        _make_param("微波源", "CH1微波功率", "int", "16dBm", "0-30", minimum=0, maximum=30, step=1, unit="dBm", visibility="required"),
         _make_param("微波源", "CH2微波功率", "int", "0dBm", "0-30", minimum=0, maximum=30, step=1, unit="dBm"),
         _make_param("微波源", "CH1微波频率", "int", "2907000000Hz", "2600000000-3100000000", minimum=2600000000, maximum=3100000000, step=1000000, unit="Hz"),
         _make_param("微波源", "CH2微波频率", "int", "2600000000Hz", "2600000000-3100000000", minimum=2600000000, maximum=3100000000, step=1000000, unit="Hz"),
