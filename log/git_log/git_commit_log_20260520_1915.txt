@@ -1,0 +1,186 @@
+===============================================
+  Git Commit Log - 自定义工作流画布重构
+===============================================
+
+提交时间: 2026-05-20 19:15:00
+提交信息: feat: 自定义工作流画布重构 - 新增参数扫描优化节点、修复CW谱采集绘图和停止功能
+
+===============================================
+  修改文件列表
+===============================================
+
+1. workflow_extension/builtins.py
+2. workflow_extension/node/cw_nodes.py
+3. workflow_extension/node/iir_nodes.py
+4. workflow_extension/node/param_scan_nodes.py (新增)
+5. workflow_extension/workflow_tab.py
+
+===============================================
+  各文件具体修改内容 (diff格式)
+===============================================
+
+-----------------------------------------------
+文件1: workflow_extension/builtins.py
+-----------------------------------------------
+修改说明: 注册参数扫描优化节点
+
+diff --git a/workflow_extension/builtins.py b/workflow_extension/builtins.py
+index ff47ff0..0f25020 100644
+--- a/workflow_extension/builtins.py
++++ b/workflow_extension/builtins.py
+@@ -55,3 +55,7 @@ def register_builtin_nodes(registry: NodeRegistry):
+     # 注册数据可视化节点
+     from workflow_extension.node.data_visualization_nodes import register_data_visualization_nodes
+     register_data_visualization_nodes(registry)
++
++    # 注册参数扫描优化节点
++    from workflow_extension.node.param_scan_nodes import register_param_scan_nodes
++    register_param_scan_nodes(registry)
+
+-----------------------------------------------
+文件2: workflow_extension/node/cw_nodes.py
+-----------------------------------------------
+修改说明: 
+1. 添加停止请求检查，支持工作流立即停止
+2. 修复CW谱采集绘图不显示问题：改用_apply_plot_mode("cw")更新绘图
+3. 移除callback调用，避免与直接绘图更新冲突导致numpy数组append错误
+
+diff --git a/workflow_extension/node/cw_nodes.py b/workflow_extension/node/cw_nodes.py
+index 2ff0c30..a42817e 100644
+--- a/workflow_extension/node/cw_nodes.py
++++ b/workflow_extension/node/cw_nodes.py
+@@ -87,6 +87,11 @@ def _exec_cw_spectrum_acquire(context, node, inputs):
+         current_freq_hz = start_freq_hz
+         try:
+             while current_freq_hz <= end_freq_hz:
++                # 检查停止请求
++                if context.get("stop_requested", lambda: False)():
++                    _log.info("工作流执行已停止")
++                    break
++
+                 if active_channel_index == 0:
+                     app.set_param(name="mw_ch1_freq", value=str(current_freq_hz), ui_flag=False, delay_flag=False)
+                 else:
+@@ -104,21 +109,16 @@ def _exec_cw_spectrum_acquire(context, node, inputs):
+                 ch2_x.append(iir_2x)
+                 ch2_y.append(iir_2y)
+
+-                if callback:
+-                    callback({"x": current_freq_hz, "y": iir_1x, "y2": iir_2x})
+-
+                 # 实时更新工作流双图显示
+                 if workflow_tab and hasattr(workflow_tab, 'plot_curve_top_main'):
+-                    # 创建numpy数组副本用于绘图，不影响原始列表
+-                    plot_x = np.array(mw_freq)
+-                    plot_y = np.array(ch1_x)
+-                    plot_upper_aux = np.array(ch1_y)
+-                    plot_lower_main = np.array(ch2_x)
+-                    plot_lower_aux = np.array(ch2_y)
+-                    workflow_tab.plot_curve_top_main.setData(plot_x, plot_y)
+-                    workflow_tab.plot_curve_top_aux.setData(plot_x, plot_upper_aux)
+-                    workflow_tab.plot_curve_bottom_main.setData(plot_x, plot_lower_main)
+-                    workflow_tab.plot_curve_bottom_aux.setData(plot_x, plot_lower_aux)
++                    # 更新workflow_tab的内部状态变量
++                    workflow_tab._plot_x = np.array(mw_freq)
++                    workflow_tab._plot_y = np.array(ch1_x)
++                    workflow_tab._plot_upper_aux = np.array(ch1_y)
++                    workflow_tab._plot_lower_main = np.array(ch2_x)
++                    workflow_tab._plot_lower_aux = np.array(ch2_y)
++                    # 应用cw绘图模式并刷新曲线
++                    workflow_tab._apply_plot_mode("cw")
+                     # 处理UI事件，保持界面响应
+                     from PySide6.QtCore import QCoreApplication
+                     QCoreApplication.processEvents()
+
+-----------------------------------------------
+文件3: workflow_extension/node/iir_nodes.py
+-----------------------------------------------
+修改说明: 添加停止请求检查，支持工作流立即停止
+
+diff --git a/workflow_extension/node/iir_nodes.py b/workflow_extension/node/iir_nodes.py
+index 3d84234..dfba323 100644
+--- a/workflow_extension/node/iir_nodes.py
++++ b/workflow_extension/node/iir_nodes.py
+@@ -51,6 +51,11 @@ def _exec_iir_acquire(context, node, inputs):
+                 collected_samples = 0
+
+                 while collected_samples < total_samples:
++                    # 检查停止请求
++                    if context.get("stop_requested", lambda: False)():
++                        _log.info("工作流执行已停止")
++                        break
++
+                     try:
+                         iir_data = app.dev.get_infinite_iir_points(data_num=min(int(sample_rate * acq_time), total_samples - collected_samples))
+                     except:
+@@ -92,6 +97,11 @@ def _exec_iir_acquire(context, node, inputs):
+
+             else:
+                 while True:
++                    # 检查停止请求
++                    if context.get("stop_requested", lambda: False)():
++                        _log.info("工作流执行已停止")
++                        break
++
+                     try:
+                         iir_data = app.dev.get_infinite_iir_points(data_num=int(sample_rate * acq_time))
+                     except:
+
+-----------------------------------------------
+文件4: workflow_extension/node/param_scan_nodes.py (新增)
+-----------------------------------------------
+修改说明: 新增参数扫描优化节点模块，包含：
+1. 二维参数扫描节点(param_scan.two_dimensional): 循环激光器电流和CH1微波功率参数扫描
+2. 参数优化节点(param_scan.optimize): 根据扫描数据自动推荐最优参数组合
+3. 数据评估节点(param_scan.evaluate): 计算各项质量指标(峰值、信噪比、半高全宽等)
+
+（完整文件新增，约420行代码）
+
+-----------------------------------------------
+文件5: workflow_extension/workflow_tab.py
+-----------------------------------------------
+修改说明: 
+1. 修复graph_model属性不存在的bug，改用scene.build_graph()
+2. 在context中传递stop_requested函数，支持节点内部检查停止状态
+
+diff --git a/workflow_extension/workflow_tab.py b/workflow_extension/workflow_tab.py
+index d35602f..a38c5a6 100644
+--- a/workflow_extension/workflow_tab.py
++++ b/workflow_extension/workflow_tab.py
+@@ -480,7 +480,7 @@ class WorkflowTab(QWidget):
+     def _run_workflow(self):
+-        graph = self.scene.graph_model
++        graph = self.scene.build_graph()
+         if not graph.nodes:
+@@ -493,7 +493,10 @@ class WorkflowTab(QWidget):
+         self._reset_plot_buffers()
+         self._running_workflow_page = self._active_workflow_page
+         self._log_msg("开始执行工作流。")
+-        context = {"app": app_context, "plot_callback": self._on_plot_payload, "workflow_tab": self}
++        # 传递stop_func用于在节点执行器中检查是否停止
++        context = {"app": app_context, "plot_callback": self._on_plot_payload, "workflow_tab": self,
++                   "running": lambda: not self.executor._stop_requested,
++                   "stop_requested": lambda: self.executor._stop_requested}
+         self.executor.run(graph, context)
+
+===============================================
+  修改总结
+===============================================
+
+本次提交主要包含以下功能改进和bug修复：
+
+1. 新增参数扫描优化节点模块(param_scan_nodes.py)
+   - 二维参数扫描：支持激光器电流和CH1微波功率的二维扫描
+   - 参数优化：基于SNR/峰值/综合指标自动推荐最优参数
+   - 数据评估：计算FWHM、SNR等质量指标
+
+2. 修复CW谱采集节点绘图不显示的bug
+   - 根因：直接调用setData()未更新内部状态变量，且callback与直接绘图更新冲突
+   - 修复：改用_apply_plot_mode("cw")更新绘图，移除冲突的callback调用
+
+3. 修复工作流停止按钮无响应的问题
+   - 根因：节点执行器内部没有检查停止标志
+   - 修复：在context中传递stop_requested函数，各节点循环中检查停止状态
+
+4. 修复WorkflowScene.graph_model属性不存在的bug
+   - 修复：改用scene.build_graph()方法构建图模型
