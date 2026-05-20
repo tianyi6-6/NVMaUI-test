@@ -493,7 +493,10 @@ class WorkflowTab(QWidget):
         self._reset_plot_buffers()
         self._running_workflow_page = self._active_workflow_page
         self._log_msg("开始执行工作流。")
-        context = {"app": app_context, "plot_callback": self._on_plot_payload, "workflow_tab": self}
+        # 传递stop_func用于在节点执行器中检查是否停止
+        context = {"app": app_context, "plot_callback": self._on_plot_payload, "workflow_tab": self, 
+                   "running": lambda: not self.executor._stop_requested,
+                   "stop_requested": lambda: self.executor._stop_requested}
         self.executor.run(graph, context)
 
     def _stop_workflow(self):

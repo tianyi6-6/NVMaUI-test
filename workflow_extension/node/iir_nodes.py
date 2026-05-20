@@ -51,6 +51,11 @@ def _exec_iir_acquire(context, node, inputs):
                 collected_samples = 0
 
                 while collected_samples < total_samples:
+                    # 检查停止请求
+                    if context.get("stop_requested", lambda: False)():
+                        _log.info("工作流执行已停止")
+                        break
+                    
                     try:
                         iir_data = app.dev.get_infinite_iir_points(data_num=min(int(sample_rate * acq_time), total_samples - collected_samples))
                     except:
@@ -92,6 +97,11 @@ def _exec_iir_acquire(context, node, inputs):
 
             else:
                 while True:
+                    # 检查停止请求
+                    if context.get("stop_requested", lambda: False)():
+                        _log.info("工作流执行已停止")
+                        break
+                    
                     try:
                         iir_data = app.dev.get_infinite_iir_points(data_num=int(sample_rate * acq_time))
                     except:

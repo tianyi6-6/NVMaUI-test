@@ -55,3 +55,7 @@ def register_builtin_nodes(registry: NodeRegistry):
     # 注册数据可视化节点
     from workflow_extension.node.data_visualization_nodes import register_data_visualization_nodes
     register_data_visualization_nodes(registry)
+
+    # 注册参数扫描优化节点
+    from workflow_extension.node.param_scan_nodes import register_param_scan_nodes
+    register_param_scan_nodes(registry)

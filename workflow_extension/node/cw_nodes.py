@@ -87,6 +87,11 @@ def _exec_cw_spectrum_acquire(context, node, inputs):
         current_freq_hz = start_freq_hz
         try:
             while current_freq_hz <= end_freq_hz:
+                # 检查停止请求
+                if context.get("stop_requested", lambda: False)():
+                    _log.info("工作流执行已停止")
+                    break
+                
                 if active_channel_index == 0:
                     app.set_param(name="mw_ch1_freq", value=str(current_freq_hz), ui_flag=False, delay_flag=False)
                 else:
@@ -104,21 +109,16 @@ def _exec_cw_spectrum_acquire(context, node, inputs):
                 ch2_x.append(iir_2x)
                 ch2_y.append(iir_2y)
 
-                if callback:
-                    callback({"x": current_freq_hz, "y": iir_1x, "y2": iir_2x})
-
                 # 实时更新工作流双图显示
                 if workflow_tab and hasattr(workflow_tab, 'plot_curve_top_main'):
-                    # 创建numpy数组副本用于绘图，不影响原始列表
-                    plot_x = np.array(mw_freq)
-                    plot_y = np.array(ch1_x)
-                    plot_upper_aux = np.array(ch1_y)
-                    plot_lower_main = np.array(ch2_x)
-                    plot_lower_aux = np.array(ch2_y)
-                    workflow_tab.plot_curve_top_main.setData(plot_x, plot_y)
-                    workflow_tab.plot_curve_top_aux.setData(plot_x, plot_upper_aux)
-                    workflow_tab.plot_curve_bottom_main.setData(plot_x, plot_lower_main)
-                    workflow_tab.plot_curve_bottom_aux.setData(plot_x, plot_lower_aux)
+                    # 更新workflow_tab的内部状态变量
+                    workflow_tab._plot_x = np.array(mw_freq)
+                    workflow_tab._plot_y = np.array(ch1_x)
+                    workflow_tab._plot_upper_aux = np.array(ch1_y)
+                    workflow_tab._plot_lower_main = np.array(ch2_x)
+                    workflow_tab._plot_lower_aux = np.array(ch2_y)
+                    # 应用cw绘图模式并刷新曲线
+                    workflow_tab._apply_plot_mode("cw")
                     # 处理UI事件，保持界面响应
                     from PySide6.QtCore import QCoreApplication
                     QCoreApplication.processEvents()
